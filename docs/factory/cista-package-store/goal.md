@@ -5,7 +5,8 @@
 **Updated**: 2026-07-08
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
 **Factory Artifact Dir**: `docs/factory/cista-package-store/`
-**Note**: Implementation lives in public sibling `faberlang/cista` (no radix dep).
+**Note**: Implementation lives in public sibling `faberlang/cista` (no radix dep;
+no crate dependency on sibling `faber`).
 **Primary Goal**: ship Faber's shared package artifact store, install lifecycle,
 faber consumption of installed packages, package roles (lib / bin / meta),
 `cista run` for installed apps, and later cista.dev client surfaces.
@@ -21,7 +22,7 @@ copying dependency trees into each project.
 | Tool | Role |
 | ---- | ---- |
 | `faber` | Project workflow: check, build, run, test on **source**; thin install facade later |
-| `cista` | Package **store**: check, install, inspect, remove; later run installed apps, fetch/publish |
+| `cista` | Package **store**: check, install, inspect, remove; may spawn `faber` / native tools for verification and build steps; later run installed apps, fetch/publish |
 | `radix` | Compiler (not a cista dependency) |
 
 **Direction:** artifact-first but not artifact-only. An installed package must
@@ -71,6 +72,27 @@ either compiled target artifacts or source compile policy. Toolchain-bundled
 Norma is a bundled cista package source using the same concepts as other
 packages, not a separate package category.
 
+## Repo Separation Invariant
+
+`faber` and `cista` remain independently buildable sibling repositories. Neither
+repo may add a Rust crate dependency on the other, directly or through a shared
+workspace-only helper crate. Cross-repo integration must use stable file
+formats, documented store paths, environment variables, command-line flags, exit
+codes, and spawned processes.
+
+`faber` is lower in the toolchain. It owns Faber project manifests, Faber's
+build lockfile, package source loading, typechecking, code generation, and build
+semantics. It must not know that `cista` exists: no `cista` crate dependency, no
+`cista` process dependency, no `cista.lock`, and no cista-specific store
+discovery in ordinary builds.
+
+`cista` owns package-store installation, inspection, removal, cache/registry
+operations, and installed artifact lifecycle. When `cista` needs Faber-language
+validation or compilation, it invokes the `faber` executable. When `cista`
+changes a project's installed dependency set, it updates the project-owned
+`faber.lock` file that `faber` can consume without knowing which package manager
+produced it.
+
 ## Package roles
 
 Installable units share one store layout but differ by role:
@@ -95,8 +117,8 @@ Installable units share one store layout but differ by role:
 - Keep installed layout for artifact-distributed and source-distributed packages.
 - Keep Faber interfaces target-neutral; target bindings live in package
   metadata, not `@ verte` / per-target annotations in API files.
-- Finish local **library** install + inspect + **faber** resolution of store
-  packages (demo consumer).
+- Finish local **library** install + inspect + **faber** consumption of
+  `faber.lock` package records produced by the package manager (demo consumer).
 - Model **Norma** as a bundled/source package on the same contract as third-party
   libs (dev fallback via `FABER_LIBRARY_HOME` until that lands).
 - Extend install to **bin** packages and introduce **`cista run`** for installed
@@ -104,8 +126,8 @@ Installable units share one store layout but differ by role:
 - Support **meta** packages as dependency sets only.
 - Treat **`cista.dev`** as the later registry host; client fetch/publish is a
   late phase, not the first milestone.
-- Keep cista free of radix/compiler linkage; call `faber`/native tools as needed
-  for compile steps.
+- Keep cista free of radix/compiler linkage and free of a crate dependency on
+  sibling `faber`; call `faber`/native tools as needed for compile steps.
 
 ## Non-goals (global)
 
@@ -164,7 +186,7 @@ Installable units share one store layout but differ by role:
 Before lowering this goal into delivery, inspect:
 
 - `src/manifest.rs`: current cista manifest schema.
-- `src/commands.rs`: current `cista check` validation behavior.
+- `src/commands/`: current `cista check` validation behavior.
 - `../examples/cista-lab/source/mathesis/`: current source-distributed package
   fixture.
 - `../faber/src/library.rs`: current provider resolver, built-in module
@@ -221,6 +243,9 @@ Before lowering this goal into delivery, inspect:
   Rust.
 - `cista.dev` is the planned canonical package host for publishing and
   retrieval; registry protocol and hosting implementation remain deferred.
+- `faber` and `cista` must not share Rust implementation types. Their shared
+  contract is the documented TOML schema, store layout, environment variables,
+  CLI behavior, and process exit semantics.
 - Do not weaken current package provenance checks to make a design fit.
 
 ## Store Layout
@@ -293,7 +318,7 @@ examples/cista-lab/
 │                   └── lib.rs
 └── demo/
     ├── faber.toml
-    ├── cista.lock
+    ├── faber.lock
     └── src/
         └── main.fab
 ```
@@ -414,14 +439,19 @@ in the manifest. Current `@ verte rs "..."` method overrides should become
 
 ## Resolver Output
 
-The build resolver should produce one concrete resolved package record for each
-provider-qualified import:
+For Phase A, `faber` owns the build-time resolved package record internally.
+`cista` owns its own installed-package/store view internally. The two repos must
+not share Rust types; both implementations conform to the same documented
+file/process contract.
+
+The build resolver inside `faber` should produce one concrete resolved package
+record for each provider-qualified import:
 
 ```text
 importa ex "mathesis:mathesis"
   -> package: mathesis
   -> version: 0.1.0
-  -> interface path: $CISTAE_HOME/mathesis/0.1.0/interfaces/mathesis.fab
+  -> interface path: /absolute/path/to/mathesis/0.1.0/interfaces/mathesis.fab
   -> target language: rust
   -> target triple: aarch64-apple-darwin
   -> target mode: artifact | compile
@@ -429,29 +459,63 @@ importa ex "mathesis:mathesis"
   -> binding table or generated binding policy
 ```
 
-The first implementation should define this output type before growing package
-install behavior. Without it, install, lockfile, codegen, and diagnostics have
-no shared contract.
+The first implementation should define this internal `faber` output shape before
+growing package install behavior further. The cross-repo contract is still the
+on-disk store layout, `cista.toml`, `faber.toml`, and `faber.lock`, not a shared
+library type.
+
+## Project Dependency Intent
+
+Phase A locks project dependency intent in `faber.toml`; `faber.lock` records
+the resolved build inputs. `faber.lock` is a Faber build lockfile, not a cista
+lockfile. The minimal project manifest syntax is:
+
+```toml
+[dependencies]
+mathesis = "0.1.0"
+```
+
+Phase A dependency rules:
+
+- Dependency keys are package/provider names used by provider-qualified imports
+  such as `mathesis:mathesis`.
+- Versions are exact strings only; no SemVer ranges.
+- Dependencies are direct only; no transitive solving.
+- No registry source syntax and no path dependencies in `faber.toml`.
+- Packages enter the shared store through `cista install --path ...`.
+- `faber check` / `faber build` validate that provider-qualified imports are
+  declared in `faber.toml`, pinned in `faber.lock`, and backed by explicit
+  interface/artifact paths from the lock.
+- `faber` must not discover `$CISTAE_HOME`, call `cista`, or interpret
+  cista-specific store roots during normal builds.
 
 ## Lockfile Role
 
 Even before full dependency solving exists, a project needs resolved records so
 builds are not based only on mutable global state in `$CISTAE_HOME`.
 
-Minimal first-pass `cista.lock` shape:
+Minimal first-pass `faber.lock` shape:
 
 ```toml
 [[package]]
 name = "mathesis"
 version = "0.1.0"
 source = "path:/Users/ianzepp/work/faberlang/radix/examples/cista-lab/source/mathesis"
-store = "mathesis/0.1.0"
+package_root = "/Users/ianzepp/.faber/cistae/mathesis/0.1.0"
 kind = "source"
 target_language = "rust"
 target_triple = "aarch64-apple-darwin"
+target_manifest = "/Users/ianzepp/.faber/cistae/mathesis/0.1.0/targets/rust/aarch64-apple-darwin/cista.toml"
+interface_root = "/Users/ianzepp/.faber/cistae/mathesis/0.1.0/interfaces"
+artifact = "/Users/ianzepp/.faber/cistae/mathesis/0.1.0/targets/rust/aarch64-apple-darwin/libmathesis.rlib"
+crate = "mathesis"
+rustc = "1.88.0"
 ```
 
-The first pass can require exact versions and direct dependencies only.
+Phase A `faber.lock` paths are explicit file-system paths so `faber` does not
+need to know the package-manager store root or environment. The package manager
+may rewrite the lock when a package is installed, moved, or re-resolved. The
+first pass can require exact versions and direct dependencies only.
 
 ## Target Identity
 
@@ -581,19 +645,29 @@ Phases A–F.
 
 **Status intent:** next implementation focus.
 
+- Keep `faber` and `cista` repo-separated: no Rust dependency in either
+  direction; process spawning and file contracts only.
 - Keep `$CISTAE_HOME` / `~/.faber/cistae`, `interfaces/`, `targets/<language>/`.
 - Flesh **inspect / list / remove** against the store (`package show`,
   `package list`, `package files`, `remove` as needed).
-- Finish **demo consumer** (`examples/cista-lab`): install `mathesis`, then
-  `faber check` / `faber build` resolves interfaces + Rust artifact from the
-  store (no vendored copy in the project).
-- Minimum **lockfile** so the demo pin is deterministic.
-- Discovery order remains: explicit path → `CISTAE_HOME` → default home →
-  toolchain-bundled root → dev sibling fallback.
+- Finish **demo consumer** (`examples/cista-lab`): install `mathesis`, update
+  `faber.lock`, then `faber check` / `faber build` consumes the locked interface
+  and Rust artifact paths (no vendored copy in the project).
+- Minimum project dependency intent in `faber.toml` (`[dependencies] mathesis =
+  "0.1.0"`).
+- Minimum **`faber.lock`** so the demo pin is deterministic and not based only
+  on mutable global store state.
+- `faber` owns build-time dependency consumption by reading `faber.toml` and
+  `faber.lock` only; it must not know about `cista`, `CISTAE_HOME`, or
+  package-manager store discovery.
+- `cista install --path` may spawn `faber` and native tools for validation/build
+  steps, but must not link against `faber` or `radix`.
+- `cista` discovery order remains: explicit path → `CISTAE_HOME` → default home
+  → toolchain-bundled root → dev sibling fallback.
 
-**Exit:** on a clean layout, `cista install --path …/mathesis` then demo
-`faber build` succeeds using only store-backed package data (+ documented
-fallback if any).
+**Exit:** on a clean layout, `cista install --path …/mathesis` updates the demo
+`faber.lock`, then demo `faber build` succeeds using only locked
+interface/artifact paths (+ documented fallback if any).
 
 ### Phase B — Norma as first real stdlib package
 
@@ -668,15 +742,21 @@ the source tree on disk.
   provider/target diagnostic — never silent wrong calls.
 - Store/resolver routing must remain revertible without changing Faber language
   grammar.
-- `cista` must not gain a radix dependency; compile steps shell out or call
-  public tools (`faber`, `cargo`, etc.) as needed.
+- `cista` must not gain a radix or `faber` crate dependency; compile steps shell
+  out or call public tools (`faber`, `cargo`, etc.) as needed.
 
 ## Acceptance Criteria
 
 ### Model (doc + manifests)
 
 - Cista is the package-store concept; `faber` remains project source workflow.
+- `faber` and `cista` remain separate repositories with no crate dependency in
+  either direction.
 - `$CISTAE_HOME` is the shared store; layouts use `interfaces/` and `targets/`.
+- `faber.toml` owns project dependency intent; `faber.lock` owns resolved build
+  inputs.
+- `faber` does not know about `cista`, `CISTAE_HOME`, or cista-specific store
+  discovery during normal builds.
 - Interface contracts stay separate from target-native binding metadata.
 - Manifest shape remains `[source]`, `[target]`, `[[bindings]]` (extend carefully
   for bin/meta roles rather than inventing a second store).
@@ -689,7 +769,8 @@ the source tree on disk.
 
 ### Delivery gates (by phase)
 
-- **A:** inspect/remove + mathesis install + faber demo build from store.
+- **A:** inspect/remove + mathesis install + `faber.toml` dependency intent +
+  `faber.lock` pin + faber demo build from locked interface/artifact paths.
 - **B:** Norma resolvable via the same package contract as third-party libs.
 - **C:** at least one coreutils-style bin installable to the store.
 - **D:** `cista run` works for that installed bin with arg passthrough.
@@ -701,9 +782,10 @@ the source tree on disk.
 - `rg -n "default_stdlib_root|norma_runtime_path|stdlib_path|LibraryResolver" ../faber/src crates/radix/src`
   should still be reviewed before implementation to verify current path
   assumptions.
-- A future delivery spec should include focused tests for explicit store
-  resolution, `$CISTAE_HOME` resolution, missing store diagnostics, development
-  fallback, and generated Rust dependency/artifact selection.
+- A future delivery spec should include focused `cista` tests for explicit store
+  resolution, `$CISTAE_HOME` resolution, and missing store diagnostics, plus
+  focused `faber` tests proving builds consume `faber.lock` paths without
+  knowing about `cista` or `$CISTAE_HOME`.
 - A future delivery spec should include a fixture proving that a package/native
   runtime mapping can resolve a Faber symbol without `@ verte` in the Faber
   interface.
@@ -722,27 +804,53 @@ the source tree on disk.
 
 ## Open Questions
 
-- Should project dependency intent live only in `faber.toml`, only in a cista
-  lock/intent file, or both? (Historical `requirit.toml` — keep or drop?)
+### Explicitly decided for Phase A
+
+- Project dependency intent lives in `faber.toml`; resolved build inputs live in
+  `faber.lock`.
+- Historical `requirit.toml` is not part of Phase A.
+- `faber` and `cista` do not share Rust types or crate dependencies. Each repo
+  owns internal representations that conform to the documented file/process
+  contract.
+- `CISTAE_HOME` is the Phase A package-manager store environment variable;
+  `faber` does not read it during normal builds.
+- Target-specific manifests sit beside artifacts at
+  `targets/<language>/<triple>/cista.toml`.
+- The minimal `faber.lock` record includes package, version, source, package
+  root, kind, target language, target triple, target manifest, interface root,
+  artifact, crate, and rustc version.
+- Phase A Rust artifact compatibility records language, triple, rustc version,
+  artifact path, crate name, and manifest flags already present in `cista.toml`.
+
+### Deferred
+
 - Do store packages keep a separate `cista.toml` forever, or does `faber.toml`
-  gain installable package fields for published units?
+  gain installable package fields for published units? (Later packaging design.)
 - How is **bin** role spelled in the manifest (field on `[source]`, `[target]`,
-  or install metadata)?
+  or install metadata)? (Phase C.)
 - Default executable entry name for bins (`package` name vs explicit `bin =`)?
-- Is `CISTAE_HOME` final, or should a broader `FABER_HOME` own `cistae/`?
-- Should one target-specific `cista.toml` sit beside each artifact, or should
-  the package-version root index available targets?
-- What compatibility facts must Rust artifacts record beyond language, triple,
-  rustc version, artifact path, and crate name?
-- Source cache vs artifact-only install for source-distributed packages?
-- How much transitive resolution is required at Phase A vs C vs F?
+  (Phase C/D.)
+- Source cache vs artifact-only install for source-distributed packages beyond
+  the Phase A rule that compiled dependency outputs do not live in the consuming
+  project.
+- How much transitive resolution is required after the Phase A direct/exact
+  dependency restriction?
+- Whether a broader `FABER_HOME` eventually owns `cistae/` instead of
+  `CISTAE_HOME`.
+- Package-version root target indexes beyond the Phase A target-specific
+  manifest location.
+- Additional Rust artifact compatibility facts beyond the Phase A set.
 - PATH shims for installed bins: in scope after Phase D, or always optional?
-- What URL and API shape should `cista.dev` expose (Phase F)?
+- What URL and API shape should `cista.dev` expose? (Phase F.)
 
 ## Stop Conditions
 
-- Stop if implementation skips Phase A (faber consuming the store) and jumps to
-  registry or bin-only demos that still need sibling-repo hacks.
+- Stop if implementation skips Phase A (`faber` consuming locked package
+  records) and jumps to registry or bin-only demos that still need sibling-repo
+  hacks.
+- Stop if either `faber` or `cista` adds a Rust crate dependency on the other,
+  or on a shared workspace-only helper crate, to satisfy the package-store
+  integration.
 - Stop if the design requires target-specific annotations in Faber interface
   files for every supported backend.
 - Stop if the package model only works for Norma and cannot describe a future
