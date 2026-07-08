@@ -46,3 +46,8 @@ cargo build --release
 Early skeleton: CLI grammar and store concepts are in place; many commands are
 still staged. The long-term product is the cista.dev registry plus this binary
 and library.
+
+## Factory goals
+
+Open package-store factory work lives under
+[`docs/factory/`](docs/factory/) (moved out of private Radix on 2026-07-08).
