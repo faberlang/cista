@@ -1,9 +1,25 @@
 # Factory documentation (cista)
 
-Open factory tracks for the public cista package store.
+Open factory tracks for the public **cista** package store / registry client.
 
-These goals were relocated from private Radix `docs/factory/` on 2026-07-08 so
-product-lane work can be planned and implemented in the owning public repo.
-Compiler-only factory work remains under `faberlang/radix/docs/factory/`.
+Relocated from private Radix on 2026-07-08.
 
-Each `goal.md` / `CAMPAIGN.md` owns its **Status** line.
+## Layout (current)
+
+```text
+cista/
+  src/                 library + CLI
+  docs/factory/        this control plane
+# siblings
+  ../faber             project tool (library resolution, package build)
+  ../norma             public stdlib source
+  ../faber-runtime     generated Rust runtime dependency
+  ../radix             private compiler session/config surfaces
+```
+
+```bash
+cargo build --release
+./target/release/cista --help
+```
+
+Each `goal.md` owns its **Status** line.

@@ -25,10 +25,11 @@ manifests, lockfiles, and project source only.
 ## Problem
 
 - Current `faber` package compilation resolves built-in library interfaces from
-  a repository-local `stdlib/` tree.
-- Generated Rust packages depend on repo-local `crates/norma`.
-- That works for in-repo development, but it does not describe how an installed
-  `faber` binary finds bundled Norma interfaces, target runtime
+  sibling Norma source via `FABER_LIBRARY_HOME` / local `faberlang/norma` layout.
+- Generated Rust packages depend on sibling **`faber-runtime`** (crate name
+  `faber`), not a Rust `norma` crate.
+- That works for multi-repo local development, but it does not describe how an
+  installed `faber` binary finds bundled Norma interfaces, target runtime
   implementations, target metadata, or future third-party packages.
 - User projects should declare dependencies, but dependency files should not be
   copied under each project. Installing the same dependency for multiple
@@ -87,7 +88,7 @@ packages, not a separate package category.
 - Do not require installed dependencies to contain full source trees unless the
   package is intentionally source-distributed.
 - Do not add target-specific annotations to Faber interface files.
-- Do not move `stdlib/norma` or `crates/norma` during discovery.
+- Do not relocate sibling `norma/src` during discovery; Norma is already the public source library.
 - Do not add new target runtimes such as Wasm or Go as part of the first
   artifact.
 - Do not solve every external package layout. Define the minimum contract future
@@ -95,21 +96,18 @@ packages, not a separate package category.
 
 ## Ground Truth Researched
 
-- `crates/faber/src/library.rs`: built-in library resolution returns `.fab`
-  interface files under a filesystem `stdlib` root derived from the repository
-  layout.
-- `crates/faber/src/package.rs`: package compilation uses
-  `Config.stdlib_path` when provided, otherwise the default resolver.
-- `crates/faber/src/package.rs`: generated Rust crates depend on
-  `norma = { path = ... }`, where the path is computed from repo-local
-  `crates/norma`.
-- `crates/faber/src/library.rs`: the data model already distinguishes built-in
-  library providers from future package-backed providers, but only `norma` is
-  currently implemented.
-- `stdlib/norma/*.fab`: Norma interfaces are Faber source contracts parsed and
+- `../faber/src/library.rs` (sibling `faber`): library resolution returns `.fab`
+  interface files under `$FABER_LIBRARY_HOME/norma/src` (local sibling layout).
+- `../faber/src/package/` (sibling `faber`): package compilation uses
+  library-home resolution; generated Rust crates depend on
+  `faber = { package = "faber-runtime", path = ... }` (sibling `faber-runtime`).
+- `../faber/src/library.rs`: the data model already distinguishes built-in
+  library providers from future package-backed providers; `norma` is the first
+  provider.
+- `../norma/src/*.fab`: Norma interfaces are Faber source contracts parsed and
   typechecked with package code.
-- `crates/norma`: Norma's Rust runtime implementation is a separate Rust crate,
-  not embedded into the `faber` binary.
+- There is **no** residual Rust `norma` crate. Runtime carriers live in sibling
+  `faber-runtime` (`use faber::…`).
 - User clarification: avoid project-local dependency trees. Multiple Faber
   projects should share installed dependency artifacts from one versioned store.
 - User clarification: use `~/.faber/cistae` or `$CISTAE_HOME` as the shared
@@ -130,23 +128,22 @@ packages, not a separate package category.
 
 Before lowering this goal into delivery, inspect:
 
-- `crates/cista/src/manifest.rs`: current cista manifest schema.
-- `crates/cista/src/commands.rs`: current `cista check` validation behavior.
-- `examples/cista-lab/source/mathesis/`: current source-distributed package
+- `src/manifest.rs`: current cista manifest schema.
+- `src/commands.rs`: current `cista check` validation behavior.
+- `../examples/cista-lab/source/mathesis/`: current source-distributed package
   fixture.
-- `crates/faber/src/library.rs`: current provider resolver, built-in module
+- `../faber/src/library.rs`: current provider resolver, built-in module
   discovery, and future package-provider placeholders.
-- `crates/faber/src/package.rs`: package loading, generated Cargo layout,
-  library provenance attachment, and generated `norma` dependency path.
-- `crates/radix/src/driver/session.rs`: `Config.stdlib_path` and how compiler
+- `../faber/src/package.rs`: package loading, generated Cargo layout,
+  library provenance attachment, and generated `faber-runtime` dependency path.
+- sibling radix `crates/radix/src/driver/session.rs`: `Config.stdlib_path` and how compiler
   sessions carry library configuration.
-- `stdlib/norma/`: current target-neutral Faber interfaces.
-- `crates/norma/`: current Rust-native Norma runtime implementation.
-- `docs/factory/library-import-provenance/plan.md`: current
+- `../norma/src/`: current target-neutral Faber interfaces.
+- sibling radix `docs/factory/library-import-provenance/plan.md`: current
   provider-qualified import model and provenance invariants.
-- `docs/factory/intrinsics-innatum-residue/plan.md`: related native symbol
+- sibling radix `docs/factory/intrinsics-innatum-residue/plan.md`: related native symbol
   mapping and `@ verte` cleanup pressure.
-- `docs/factory/target-support-matrix/goal.md`: target metadata precedent and
+- sibling radix `docs/factory/target-support-matrix/goal.md`: target metadata precedent and
   validation posture.
 
 ## Constraints And Invariants
@@ -182,7 +179,7 @@ Before lowering this goal into delivery, inspect:
   manifest concepts future packages can use.
 - Installed binary behavior must not depend on source-repository-relative paths
   unless explicitly running in development mode.
-- Development mode may continue using repo-local `stdlib/` and `crates/norma`
+- Development mode may continue using sibling `norma/src` via `FABER_LIBRARY_HOME`
   while the package-store model is introduced.
 - Distribution design must account for multiple targets, including Rust, Go,
   TypeScript/JavaScript, and Wasm, even if the first implementation only proves
@@ -240,7 +237,7 @@ Discovery order for package artifacts:
 2. `CISTAE_HOME`
 3. default `~/.faber/cistae`
 4. bundled package root relative to the installed Faber toolchain
-5. development fallback for repo-local `stdlib/` and `crates/norma`
+5. development fallback for sibling `norma/src` via `FABER_LIBRARY_HOME`
 
 ## Source Package Fixture Layout
 
@@ -588,7 +585,7 @@ The first pass should produce clear diagnostics for:
 ## Exit Strategy
 
 - Any first implementation should preserve a development fallback that uses the
-  existing repo-local `stdlib/` and `crates/norma` paths.
+  existing sibling `norma/src` via `FABER_LIBRARY_HOME`.
 - If package store discovery fails, diagnostics must explain the searched paths
   and how to set the explicit path.
 - If target runtime binding metadata is missing, package compilation should
@@ -621,7 +618,7 @@ The first pass should produce clear diagnostics for:
 
 ## Validation
 
-- `rg -n "default_stdlib_root|norma_runtime_path|stdlib_path|LibraryResolver" crates/faber/src crates/radix/src`
+- `rg -n "default_stdlib_root|norma_runtime_path|stdlib_path|LibraryResolver" ../faber/src crates/radix/src`
   should still be reviewed before implementation to verify current path
   assumptions.
 - A future delivery spec should include focused tests for explicit store
@@ -641,7 +638,7 @@ The first pass should produce clear diagnostics for:
   hand-written Rust runtime sources compile through manifest policy and that
   bindings resolve without `@ subsidia` or `@ verte` in the interface files.
 - Review check: the accepted model should not require editing
-  `stdlib/norma/*.fab` to add a new target runtime such as Wasm.
+  `../norma/src/*.fab` to add a new target runtime such as Wasm.
 
 ## Open Questions
 
