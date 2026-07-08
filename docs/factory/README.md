@@ -23,3 +23,9 @@ cargo build --release
 ```
 
 Each `goal.md` owns its **Status** line.
+
+## Open goals
+
+| Goal | Status | Entry |
+| ---- | ------ | ----- |
+| Cista package store | active — phases A–F (lib store → Norma → bins → run → meta → registry) | [`cista-package-store/goal.md`](cista-package-store/goal.md) |

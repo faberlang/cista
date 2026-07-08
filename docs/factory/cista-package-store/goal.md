@@ -1,26 +1,39 @@
 # Goal: Cista Package Store Model
 
-**Status**: discovery goal
+**Status**: active — phased implementation plan (library store → Norma → bins → run → meta → registry)
 **Created**: 2026-06-21
-**Updated**: 2026-06-21
+**Updated**: 2026-07-08
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
 **Factory Artifact Dir**: `docs/factory/cista-package-store/`
-**Note**: Implementation lives in public sibling `faberlang/cista`.
-**Primary Goal**: define Faber's shared package artifact store, installed package layout, bundled Norma package shape, and target runtime binding contract
+**Note**: Implementation lives in public sibling `faberlang/cista` (no radix dep).
+**Primary Goal**: ship Faber's shared package artifact store, install lifecycle,
+faber consumption of installed packages, package roles (lib / bin / meta),
+`cista run` for installed apps, and later cista.dev client surfaces.
 
 ## Summary
 
-Define a coherent cista package model for Faber so standard and third-party
-packages can be consumed without copying dependency files into each project.
-The first goal is not to implement a public package registry. The first goal is
-to establish the package-store shape, manifest contract, resolver output, and
-validation rules needed for local package installation and demo builds.
+Define and implement a coherent **cista** package model so standard and
+third-party packages are installed into a shared store and consumed without
+copying dependency trees into each project.
 
-The current direction is artifact-first but not artifact-only. An installed
-cista package must contain Faber interfaces needed for typechecking, and it may
-either contain compiled target artifacts or contain source plus enough compile
-policy to build a target artifact locally. Project directories contain
-manifests, lockfiles, and project source only.
+**Tool split (stable):**
+
+| Tool | Role |
+| ---- | ---- |
+| `faber` | Project workflow: check, build, run, test on **source**; thin install facade later |
+| `cista` | Package **store**: check, install, inspect, remove; later run installed apps, fetch/publish |
+| `radix` | Compiler (not a cista dependency) |
+
+**Direction:** artifact-first but not artifact-only. An installed package must
+include Faber interfaces for typechecking, plus either compiled target
+artifacts or source plus compile policy. Project directories hold manifests,
+lockfiles, and project source only.
+
+**Shipped today (partial):** `cista check` and `cista install --path` for Rust
+**library** packages (mathesis-style). Most other CLI verbs are staged stubs.
+
+**Sequencing principle:** close the **local library** loop and Norma packaging
+before binary apps, `cista run`, meta packages, or the public registry.
 
 ## Problem
 
@@ -58,41 +71,63 @@ either compiled target artifacts or source compile policy. Toolchain-bundled
 Norma is a bundled cista package source using the same concepts as other
 packages, not a separate package category.
 
+## Package roles
+
+Installable units share one store layout but differ by role:
+
+| Role | Meaning | Primary consumer |
+| ---- | ------- | ---------------- |
+| **lib** | Interfaces + target artifact (or compile policy); linked/typechecked by builds | `faber check` / `faber build` |
+| **bin** | Executable application entry in the store | `cista run <name>` |
+| **meta** | Identity + dependency list only (e.g. suite install) | `cista install` expands deps |
+
+- Real packages are **individual units** (e.g. `cat`, `mathesis`), not a forced
+  monorepo blob.
+- A suite such as coreutils is **one bin package per utility**, optional shared
+  **lib** for helpers, optional **meta** that only lists those bins.
+- Project packages use **`faber.toml`** today; store packages use **`cista.toml`**.
+  Whether those merge is an open decision; meta-as-deps does not require merging
+  first.
+
 ## Goals
 
-- Define `$CISTAE_HOME`, defaulting to `~/.faber/cistae`, as the shared
-  versioned package artifact store used by builds.
-- Define installed cista package layout for artifact-distributed and
-  source-distributed packages.
-- Define how a package exposes Faber interfaces and target runtime bindings.
-- Define how target-native symbol mappings live outside Faber interface files.
-- Define how bundled Norma fits the general package model as a bundled standard
-  package.
-- Define how future non-Norma packages can provide Faber interfaces and
-  per-target artifacts.
-- Define binding policy variants for generated target symbols versus manifest
-  mappings to hand-written target implementations.
-- Define a minimal local-source install flow that builds a package for a target
-  and installs only the consumable artifact bundle into `$CISTAE_HOME`.
-- Treat `cista.dev` as the planned canonical domain for future package
-  publishing and retrieval.
-- Produce enough design clarity for a delivery spec to implement the first
-  milestone safely.
+- Keep `$CISTAE_HOME` (default `~/.faber/cistae`) as the shared versioned store.
+- Keep installed layout for artifact-distributed and source-distributed packages.
+- Keep Faber interfaces target-neutral; target bindings live in package
+  metadata, not `@ verte` / per-target annotations in API files.
+- Finish local **library** install + inspect + **faber** resolution of store
+  packages (demo consumer).
+- Model **Norma** as a bundled/source package on the same contract as third-party
+  libs (dev fallback via `FABER_LIBRARY_HOME` until that lands).
+- Extend install to **bin** packages and introduce **`cista run`** for installed
+  apps (coreutils-shaped proof).
+- Support **meta** packages as dependency sets only.
+- Treat **`cista.dev`** as the later registry host; client fetch/publish is a
+  late phase, not the first milestone.
+- Keep cista free of radix/compiler linkage; call `faber`/native tools as needed
+  for compile steps.
 
-## Non-goals
+## Non-goals (global)
 
-- Do not implement a public package registry in this goal.
-- Do not build remote publishing, authentication, semantic version solving, or
-  full dependency graph resolution.
 - Do not copy installed dependencies into project directories.
-- Do not require installed dependencies to contain full source trees unless the
-  package is intentionally source-distributed.
+- Do not require full source trees in every install (only source-distributed
+  packages).
 - Do not add target-specific annotations to Faber interface files.
-- Do not relocate sibling `norma/src` during discovery; Norma is already the public source library.
-- Do not add new target runtimes such as Wasm or Go as part of the first
-  artifact.
-- Do not solve every external package layout. Define the minimum contract future
-  packages must satisfy.
+- Do not relocate sibling `norma/src` as a special permanent category; Norma
+  becomes a normal package instance.
+- Do not add Wasm/Go/TS package targets before Rust **lib + bin** is solid.
+- Do not put application packaging (e.g. static site / “web target”) into the
+  compiler or into early cista phases.
+- Do not treat `cista run` as “run a framework against a source tree”; it runs
+  an **installed package entry** (bin/tool). Site/framework build CLIs are
+  separate product tools that may be installed as bins.
+
+### Deferred to later phases (not forever out of scope)
+
+- Public registry protocol, auth, publish/yank (Phase F).
+- Rich SemVer solving (start with direct exact deps + lockfile).
+- Full transitive resolution beyond what each phase explicitly needs.
+- PATH shims for installed bins (nice-to-have after `cista run`).
 
 ## Ground Truth Researched
 
@@ -535,86 +570,131 @@ The first pass should produce clear diagnostics for:
 
 ## Implementation Shape
 
-### Phase 1: Store And Manifest Contract
+Phased plan. Prefer **A → B → C → D**, then **E** / **F**. Do not start
+registry or bin work until the local library consumer loop works.
 
-- Keep `$CISTAE_HOME` as the canonical dependency artifact store root.
-- Keep `~/.faber/cistae` as the default store path.
-- Keep `interfaces/` and `targets/<language>/` as canonical package layout
-  directories.
-- Treat bundled Norma as a bundled cista package using the same package/version
-  layout.
-- Decide whether the project dependency intent file remains separate from
-  `faber.toml` and whether the historical `requirit.toml` idea survives.
+Legacy labels Phase 1–2 from earlier drafts map to **partially shipped** store
+contract + library `install --path`; remaining work is reorganized below as
+Phases A–F.
 
-### Phase 2: Local Source Install
+### Phase A — Finish local library store (close the loop)
 
-- Implement `cista install --path <package> --target-language rust`.
-- Reuse `cista check` validation during install.
-- Build or verify the Rust target implementation.
-- Install only interfaces, selected target manifest, and selected target
-  artifact into `$CISTAE_HOME`.
-- Do not copy dependency contents into the consuming project.
+**Status intent:** next implementation focus.
 
-### Phase 3: Installed Package Inspection
+- Keep `$CISTAE_HOME` / `~/.faber/cistae`, `interfaces/`, `targets/<language>/`.
+- Flesh **inspect / list / remove** against the store (`package show`,
+  `package list`, `package files`, `remove` as needed).
+- Finish **demo consumer** (`examples/cista-lab`): install `mathesis`, then
+  `faber check` / `faber build` resolves interfaces + Rust artifact from the
+  store (no vendored copy in the project).
+- Minimum **lockfile** so the demo pin is deterministic.
+- Discovery order remains: explicit path → `CISTAE_HOME` → default home →
+  toolchain-bundled root → dev sibling fallback.
 
-- Implement `cista package show <package>`.
-- Implement `cista package interfaces <package>`.
-- Implement `cista runtime bindings <package> --target rust`.
-- Ensure these commands can inspect both `$CISTAE_HOME` packages and bundled
-  packages.
+**Exit:** on a clean layout, `cista install --path …/mathesis` then demo
+`faber build` succeeds using only store-backed package data (+ documented
+fallback if any).
 
-### Phase 4: Demo Consumer Build
+### Phase B — Norma as first real stdlib package
 
-- Add `examples/cista-lab/demo/`.
-- Add a minimal project manifest and `cista.lock` for `mathesis`.
-- Teach `faber check` or `faber build` enough resolver behavior to find the
-  installed `mathesis` interface from `$CISTAE_HOME`.
-- Preserve provider provenance for imported package interfaces.
-- Link generated Rust against the installed or locally compiled Mathesis target
-  artifact.
+- Norma package manifest (`mode = "compile"`, `binding_policy = "manifest"` as
+  appropriate).
+- Same resolver contract as third-party libs; bundled vs user-store instances
+  share layout concepts.
+- Move target binding facts out of Faber interfaces into package metadata where
+  still leaking.
+- Preserve **dev fallback** (`FABER_LIBRARY_HOME` / sibling `norma`) until store
+  resolution is proven; fail closed with searched-path diagnostics when store
+  lookup is required and fails.
 
-### Phase 5: Norma As Bundled Package
+**Exit:** a Faber package typechecks/links against Norma via cista resolution,
+not only a sibling checkout.
 
-- Add a Norma package manifest using `mode = "compile"` and
-  `binding_policy = "manifest"`.
-- Move Norma Rust binding facts out of Faber interfaces and into manifest
-  bindings.
-- Prove bundled Norma and installed third-party packages use the same resolver
-  contract.
+### Phase C — Binary packages (coreutils-shaped)
+
+- Package role **lib vs bin** in install metadata (manifest field or equivalent).
+- `cista install --path` builds and installs an **executable** into the store
+  (not only `lib*.rlib`).
+- Shared helpers become a real **lib** package (e.g. coreutils `common/gnu`),
+  not monorepo-only relative imports, for any bin that should be installable.
+- Proof: one utility end-to-end (`true` or `cat` under
+  `examples/coreutils/packages/…`).
+
+**Exit:** `cista install --path …/packages/true` (or `cat`) materializes a
+runnable store entry for the host triple.
+
+### Phase D — `cista run`
+
+- Resolve installed package name[`@version`] → executable entry; verify host
+  triple / presence.
+- Arg passthrough: `cista run cat -- file.txt`.
+- Fail clearly if the package is a **lib** (or meta without a default bin).
+
+**Exit:** after install, `cista run true` / `cista run cat -- …` works without
+the source tree on disk.
+
+### Phase E — Meta packages (optional, small)
+
+- Meta package = **identity + dependency list** (and pins as needed).
+- `cista install` of a meta package installs the dependency set.
+- Example shape: `coreutils` meta → individual bin packages; units of truth
+  remain per-utility packages.
+
+**Exit:** local meta install expands to the expected set of store entries.
+
+### Phase F — Registry client (cista.dev)
+
+- `fetch` / `install <name>@ver` from remote; then `publish` / auth as needed.
+- Cista remains the **client**; hosting protocol for cista.dev can evolve in
+  parallel docs.
+- Still no requirement to solve every registry edge case in the first publish
+  slice.
+
+**Exit:** install a published lib or bin without `--path`.
+
+### Explicitly not in A–D
+
+- Static site / web application packaging.
+- Compiler `Target::Web` or framework-as-compiler-target.
+- Multi-language package artifacts beyond Rust until Rust lib+bin is solid.
 
 ## Exit Strategy
 
-- Any first implementation should preserve a development fallback that uses the
-  existing sibling `norma/src` via `FABER_LIBRARY_HOME`.
-- If package store discovery fails, diagnostics must explain the searched paths
-  and how to set the explicit path.
-- If target runtime binding metadata is missing, package compilation should
-  fail with a provider/target diagnostic rather than silently generating wrong
-  target calls.
-- A later implementation should be removable by reverting resolver/config
-  routing without changing the Faber language grammar.
+- Preserve development fallback to sibling `norma/src` via `FABER_LIBRARY_HOME`
+  until Phase B is solid.
+- Package-store discovery failures must list searched paths and how to set
+  `CISTAE_HOME`.
+- Missing target binding metadata must fail package compilation with a clear
+  provider/target diagnostic — never silent wrong calls.
+- Store/resolver routing must remain revertible without changing Faber language
+  grammar.
+- `cista` must not gain a radix dependency; compile steps shell out or call
+  public tools (`faber`, `cargo`, etc.) as needed.
 
 ## Acceptance Criteria
 
-- The goal defines `cista` as the package concept and identifies how it relates
-  to the `faber` command.
-- The goal defines `$CISTAE_HOME` as the shared dependency artifact store.
-- The goal defines canonical source package, installed package, and bundled
-  package layouts using `interfaces/` and `targets/`.
-- The goal distinguishes Faber interface contracts from target-native runtime
-  implementation metadata.
-- The goal defines an installed artifact manifest shape with `[source]`,
-  `[target]`, and `[[bindings]]` using structured `source_module`,
-  `source_symbol`, and `target` binding keys.
-- The goal defines source-distributed package mode with target compile policy
-  and distinguishes generated bindings from manifest bindings.
-- The goal identifies Norma as the larger source-distributed package example
-  using `mode = "compile"` and `binding_policy = "manifest"`.
-- The goal explains how Norma becomes a bundled package instance of the general
-  package model.
-- The goal identifies a local-source install and demo-build slice small enough
-  for delivery.
-- The goal records open decisions that must be answered before implementation.
+### Model (doc + manifests)
+
+- Cista is the package-store concept; `faber` remains project source workflow.
+- `$CISTAE_HOME` is the shared store; layouts use `interfaces/` and `targets/`.
+- Interface contracts stay separate from target-native binding metadata.
+- Manifest shape remains `[source]`, `[target]`, `[[bindings]]` (extend carefully
+  for bin/meta roles rather than inventing a second store).
+- Source vs artifact distribution and generated vs manifest binding policies
+  remain defined.
+- Package roles **lib / bin / meta** are defined; meta is deps-only.
+- Norma is an instance of the general package model, not a permanent special case.
+- `cista run` is defined as executing an **installed bin entry**, not building
+  arbitrary source trees.
+
+### Delivery gates (by phase)
+
+- **A:** inspect/remove + mathesis install + faber demo build from store.
+- **B:** Norma resolvable via the same package contract as third-party libs.
+- **C:** at least one coreutils-style bin installable to the store.
+- **D:** `cista run` works for that installed bin with arg passthrough.
+- **E:** meta install expands dependencies (when implemented).
+- **F:** remote install without `--path` (when implemented).
 
 ## Validation
 
@@ -642,40 +722,35 @@ The first pass should produce clear diagnostics for:
 
 ## Open Questions
 
-- Should `cista` appear in the project manifest format, or remain package-unit
-  terminology plus a low-level crate/tool?
-- Is `CISTAE_HOME` the final canonical environment variable for the shared
-  package artifact store?
-- Should `$CISTAE_HOME` point directly at the cista store root
-  (`~/.faber/cistae`) or should a broader `FABER_HOME` own `cistae/`?
-- Should the generated Rust crate depend on a bundled Norma crate path, a
-  published `norma` crate version, or either depending on build mode?
-- Where should target-native binding manifests live in the repo before bundled
-  package layout exists?
-- Should one target-specific `cista.toml` live beside each compiled target
-  artifact, or should the package-version root contain an index of available
-  target artifacts?
-- What exact compatibility facts must Rust target artifacts record beyond
-  language, triple, rustc version, artifact path, and crate name?
-- Should source-distributed packages always install source under `$CISTAE_HOME`,
-  or should source be retained in a separate source cache and compiled artifacts
-  be stored in a build cache?
-- How much of package dependency resolution belongs in the first cista milestone
-  versus a later package-manager goal?
-- Does the historical `requirit.toml` dependency-intent design remain useful,
-  or should package dependency intent move under a newer Cista-shaped project
-  manifest contract?
-- What URL and API shape should `cista.dev` expose once registry work begins?
+- Should project dependency intent live only in `faber.toml`, only in a cista
+  lock/intent file, or both? (Historical `requirit.toml` — keep or drop?)
+- Do store packages keep a separate `cista.toml` forever, or does `faber.toml`
+  gain installable package fields for published units?
+- How is **bin** role spelled in the manifest (field on `[source]`, `[target]`,
+  or install metadata)?
+- Default executable entry name for bins (`package` name vs explicit `bin =`)?
+- Is `CISTAE_HOME` final, or should a broader `FABER_HOME` own `cistae/`?
+- Should one target-specific `cista.toml` sit beside each artifact, or should
+  the package-version root index available targets?
+- What compatibility facts must Rust artifacts record beyond language, triple,
+  rustc version, artifact path, and crate name?
+- Source cache vs artifact-only install for source-distributed packages?
+- How much transitive resolution is required at Phase A vs C vs F?
+- PATH shims for installed bins: in scope after Phase D, or always optional?
+- What URL and API shape should `cista.dev` expose (Phase F)?
 
 ## Stop Conditions
 
-- Stop if implementation starts before deciding the package store discovery
-  order.
+- Stop if implementation skips Phase A (faber consuming the store) and jumps to
+  registry or bin-only demos that still need sibling-repo hacks.
 - Stop if the design requires target-specific annotations in Faber interface
   files for every supported backend.
 - Stop if the package model only works for Norma and cannot describe a future
   non-Norma provider.
-- Stop if installed binary behavior still depends exclusively on repository
-  layout.
+- Stop if installed **bin** behavior still depends exclusively on repository
+  layout (relative monorepo imports as the only way to share helpers).
 - Stop if adding Wasm or another target would require editing existing
   target-neutral Faber interfaces.
+- Stop if `cista run` is redefined as “compile and run local source” (that is
+  `faber run`).
+- Stop if cista gains a radix/compiler crate dependency.
