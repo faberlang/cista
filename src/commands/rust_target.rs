@@ -22,6 +22,14 @@ pub(super) fn verify_target_build(
         diagnostics.push("--verify-target-build requires target.mode = `compile`".to_owned());
         return;
     }
+    // Interfaces-only pure Faber packages have no native target.source to check.
+    if manifest.target.source.is_none() {
+        diagnostics.push(
+            "--verify-target-build has nothing to check: package has no target.source (interfaces-only)"
+                .to_owned(),
+        );
+        return;
+    }
 
     let Ok((cargo_toml, _)) = rust_cargo_paths(package_root, manifest) else {
         return;

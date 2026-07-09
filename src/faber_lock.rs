@@ -28,6 +28,8 @@ pub struct LockedPackage {
     pub target_triple: String,
     pub target_manifest: String,
     pub interface_root: String,
+    /// Absolute artifact path when present; empty for interfaces-only packages.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub artifact: String,
     #[serde(rename = "crate")]
     pub crate_name: String,
@@ -80,7 +82,10 @@ pub fn absolute_display(path: &Path) -> String {
         .to_string()
 }
 
-/// Build a lock record for a successfully installed Rust library.
+/// Build a lock record for a successfully installed package.
+///
+/// When `has_artifact` is false (interfaces-only install), `artifact` is left
+/// empty and omitted on serialize.
 pub fn locked_from_install(
     name: &str,
     version: &str,
@@ -92,13 +97,18 @@ pub fn locked_from_install(
     crate_name: &str,
     rustc: &str,
     kind: &str,
+    has_artifact: bool,
 ) -> LockedPackage {
     let package_root = absolute_display(package_store_root);
     let target_dir = package_store_root
         .join("targets")
         .join(target_language)
         .join(target_triple);
-    let artifact = target_dir.join(artifact_name);
+    let artifact = if has_artifact && !artifact_name.as_os_str().is_empty() {
+        absolute_display(&target_dir.join(artifact_name))
+    } else {
+        String::new()
+    };
     LockedPackage {
         name: name.to_owned(),
         version: version.to_owned(),
@@ -109,7 +119,7 @@ pub fn locked_from_install(
         target_triple: target_triple.to_owned(),
         target_manifest: absolute_display(&target_dir.join("cista.toml")),
         interface_root: absolute_display(&package_store_root.join("interfaces")),
-        artifact: absolute_display(&artifact),
+        artifact,
         crate_name: crate_name.to_owned(),
         rustc: rustc.to_owned(),
     }
