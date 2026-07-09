@@ -199,35 +199,36 @@ shims — not for default Norma.
 
 ### P5 — Declaration and default injection
 
-Phase A: every third-party provider must appear in `faber.toml` deps + lock.
+Phase A: third-party providers appear in `faber.toml` deps + lock.
 
-**Norma is special only as product default, not as resolver magic.**
+**Decided (user, 2026-07-08):** Norma is a **hard platform default**, not an
+application dependency declaration.
 
-Options:
+- Apps **do not** list `norma` in `faber.toml` `[dependencies]`.
+- Norma **just is** available to any Faber package build (like a language stdlib).
+- That does **not** reintroduce faber walking `$CISTAE_HOME`. Provisioning still
+  produces paths faber can consume:
+  - **Dev:** sibling / `FABER_LIBRARY_HOME` layout (unchanged fallback).
+  - **Packaged:** toolchain or `cista` ensures Norma is installed and the build
+    sees Norma via **implicit lock injection** or an equivalent default lock
+    record (absolute interface paths), not via a user-authored dep line.
+- Third-party packages still use explicit `faber.toml` deps + lock rewrite.
 
-| Option | Behavior | Pros | Cons |
-| --- | --- | --- | --- |
-| **B1 Declare** | Apps list `norma = "x.y.z"` like any dep | Uniform; honest | Every package churn |
-| **B2 Implicit lock** | Toolchain install always writes Norma into `faber.lock` without faber.toml dep | Ergonomic | Hidden dep; faber must accept lock entries without declared dep |
-| **B3 Hybrid** | faber.toml may omit Norma; if lock has Norma, use it; else FABER_LIBRARY_HOME fallback | Soft migration | Two resolution paths longer |
-
-**Mandatory for problem lock:** pick migration posture before coding.
-
-Recommendation for first B delivery: **B3 Hybrid** with explicit exit criterion:
-
-- With lock entry for `norma`, build works **without** library-home.
-- Without lock entry, sibling `FABER_LIBRARY_HOME` still works (dev).
-- Declaring `norma` in deps is allowed and preferred for new packages; not
-  required for entire corpus in B.
+So Norma is special as **product default / always-on provider**, not as a
+second store category or a cista-aware faber.
 
 ### P6 — Versioning
 
-- Faber tool is `0.38.0` today; goal examples used `0.36.0` for Norma.
-- Norma repo has **no package version file** yet.
-- Phase B needs a **version source of truth** for store path
-  `norma/<version>/` (e.g. norma `VERSION` / `cista.toml` / align to faber).
+**Decided:** Norma is **versioned independently of Faber**.
 
-Do not invent SemVer solving; exact pins only (Phase A rule).
+- Store path: `$CISTAE_HOME/norma/<norma_version>/…`
+- Norma’s own package manifest (or VERSION) is the source of truth for that
+  version string — not `faber`’s crate version.
+- Faber may declare a minimum compatible Norma (`faber_min` inverted, or
+  toolchain pins both) later; Phase B only requires Norma to carry its own
+  version.
+
+Do not invent SemVer solving; exact pins only where pins exist (Phase A rule).
 
 ### P7 — Annotation cleanup (re-scoped)
 
@@ -242,18 +243,65 @@ Phase B annotation work is therefore:
 - Residual `@verte` pressure may still exist in **radix/compiler** or historical
   docs — out of Phase B package-store scope unless it blocks install.
 
-### P8 — Nested modules and install snapshot
+### P8 — Nested modules, `interfaces/`, and install mapping
 
-Install must preserve directory structure:
+#### What `interfaces/` means
+
+In the **installed store**, every package version root has a target-neutral
+Faber API tree:
 
 ```text
-interfaces/solum.fab
-interfaces/solum/path.fab
-interfaces/json/solve.fab
+$CISTAE_HOME/<package>/<version>/
+  interfaces/     ← Faber .fab contracts the compiler typechecks against
+  targets/…       ← optional: compiled artifacts or compile policy
 ```
 
-Not a flat dump. Phase A mathesis was single-file; Norma is the first multi-module
-tree install proof.
+That directory name is the **store vocabulary**, not “a special Norma idea.”
+Phase A mathesis already installs into `interfaces/mathesis.fab`.
+
+#### Source layout vs store layout
+
+A **source package** (git tree before install) may put Faber files anywhere its
+`cista.toml` declares:
+
+```toml
+# mathesis lab (already)
+interfaces = "interfaces"   # source tree path → copied into store interfaces/
+
+# Norma today (likely)
+interfaces = "src"          # source tree path norma/src → store interfaces/
+```
+
+At **install**, cista always materializes the store as:
+
+```text
+…/norma/<ver>/interfaces/solum.fab
+…/norma/<ver>/interfaces/solum/path.fab
+…/norma/<ver>/interfaces/json/solve.fab
+```
+
+So “remap” means: **read from whatever path the package author used; write the
+canonical store tree.** It does **not** mean rewrite every import or rename
+every repo on disk.
+
+#### Does every cista install do this?
+
+**Yes — for the Faber-facing API tree.** That is the package-store contract:
+
+| Source repo | cista.toml field | Store after install |
+| --- | --- | --- |
+| mathesis | `interfaces = "interfaces"` | `…/mathesis/0.1.0/interfaces/` |
+| norma | `interfaces = "src"` (proposed) | `…/norma/<ver>/interfaces/` |
+| future lib | whatever path they choose | always `…/<pkg>/<ver>/interfaces/` |
+
+faber only ever sees the **store (or lock) path** to that tree
+(`interface_root` in `faber.lock`). It never needs to know the source-repo
+spelling (`src` vs `interfaces`).
+
+**Decided lean:** keep `norma/src` in the Norma repo; map to store `interfaces/`
+at install. No forced in-repo restructure for Phase B.
+
+Nested modules must preserve directory structure under that tree (not a flat dump).
 
 ### P9 — Fallback and fail-closed
 
@@ -278,64 +326,76 @@ separation.
 - Not implementing the stale goal sample that assumes `libnorma.rlib` +
   `binding_policy = "manifest"` as the default Norma shape.
 
-## Recommended problem lock (decisions)
+## Problem lock (decided 2026-07-08)
 
-Propose these as **decided for Phase B delivery** (confirm or amend):
-
-1. **Norma is one package identity** `norma`, multi-module interface tree.
+1. **Norma is one package identity** `norma`, multi-module Faber tree.
 2. **Default policy is source + generated** (Faber bodies), not manifest bindings.
-3. **Install snapshots interfaces** into the store; building `libnorma.rlib` is
-   **out of B** unless a later slice proves a need.
+3. **Install snapshots the Faber API tree** into the store under canonical
+   `interfaces/`; building `libnorma.rlib` is **out of B** unless proven later.
 4. **faber-runtime stays a separate always-linked runtime**; not Norma’s artifact.
-5. **Lock contract** from Phase A is the only build-time Norma path for “packaged”
-   mode; no cista knowledge in faber.
-6. **Migration = hybrid**: lock wins when present; library-home remains fallback.
-7. **Version** must be explicit in Norma’s package manifest before first install.
-8. **Goal.md Norma-style TOML sample** should be rewritten to match live Norma
-   (generated / source), with “manifest bindings” reserved for non-Norma native
-   packages.
+5. **No cista knowledge in faber**; packaged builds use lock (or equivalent
+   absolute path records), not `$CISTAE_HOME` discovery.
+6. **Norma is a hard platform default** — not listed in app `faber.toml`
+   `[dependencies]`. It is always available; third-party deps stay explicit.
+7. **Norma version is independent of Faber**; Norma package manifest owns the
+   version string used in the store path.
+8. **Source path mapping is universal:** every cista install copies the path
+   named by `cista.toml` `interfaces = "…"` into store `…/interfaces/`. Norma
+   keeps `src/` in-repo; install maps `src` → store `interfaces/`. No special
+   remap just for Norma.
+9. **Artifact field (Q4 default):** omit or leave compile-policy-only for Norma
+   v1; do not invent a fake rlib.
+10. **Shared rlib cache (Q5 default):** out of B; keep codegen-from-locked-
+    interfaces (same as today’s library path). Cache is a later optimization.
+11. **Goal.md** Norma TOML / Phase B bullets must be rewritten to match this lock.
 
-## Exit criteria (problem-level, not full delivery yet)
+### Q1–Q5 resolution table
+
+| ID | Decision |
+| --- | --- |
+| **Q1** | Norma is hard default: **not** in `faber.toml`. Always available. Provision via toolchain/install + lock (or dev library-home), not app dep lines. |
+| **Q2** | Norma versioned **independently** of Faber. |
+| **Q3** | `interfaces/` = **store** name for Faber API tree. Install **always** maps package-declared path → store `interfaces/`. Keep `norma/src` in repo. |
+| **Q4** | No user preference → **omit artifact / policy-only** for Norma v1. |
+| **Q5** | No user preference → **no shared rlib cache in B**; codegen from interfaces. |
+
+## Exit criteria (problem-level)
 
 Phase B is done when **all** of the following are true:
 
-1. There exists a Norma package layout + `cista.toml` consistent with (1–4).
-2. `cista install --path <norma-package>` materializes
-   `$CISTAE_HOME/norma/<ver>/interfaces/...` (tree preserved).
-3. A consumer with `faber.lock` Norma entry typechecks/builds using that
-   `interface_root` for `norma:*` **with library-home unavailable or unused**
-   for provider `norma`.
-4. Same consumer without lock entry still works via existing sibling fallback.
+1. Norma package layout + `cista.toml` (independent version; `interfaces = "src"`
+   or equivalent map).
+2. `cista install --path <norma>` materializes
+   `$CISTAE_HOME/norma/<norma_ver>/interfaces/...` (tree preserved).
+3. A consumer **without** `norma` in `faber.toml` typechecks/builds `norma:*`
+   from packaged paths (implicit lock / default provision) with library-home
+   unused for provider `norma`.
+4. Dev fallback without package install still works via sibling /
+   `FABER_LIBRARY_HOME`.
 5. faber still has **zero** dependency on cista / `CISTAE_HOME`.
-6. Docs state: Norma is a normal package instance; sibling tree is fallback.
+6. Docs: Norma is the default package instance; not an app dependency line.
 
-## Open questions still needing a human call
+## Open questions remaining
 
-| ID | Question | Blocks code? |
+| ID | Question | Notes |
 | --- | --- | --- |
-| Q1 | Hybrid (B3) vs require `norma` in every `faber.toml` (B1)? | Soft — recommend B3 |
-| Q2 | Norma version source of truth (file / align to faber / independent)? | Yes for install path |
-| Q3 | Keep `norma/src` path in-repo and map to `interfaces/` only in store, or restructure repo? | Soft — prefer map-at-install, no force-move |
-| Q4 | Should lock `artifact` be omitted for Norma v1 or point at a compile-policy placeholder? | Soft — omit or policy-only |
-| Q5 | Is “codegen Norma into every app crate” acceptable mid-term, or must B start shared rlib caching? | Soft for B exit; cache is optimization later |
+| Q6 | Exact mechanism for “hard default”: inject Norma into every `faber.lock` on install/bootstrap, vs faber built-in default path table written by toolchain? | Implementation shape; product intent is clear (always available, not in faber.toml) |
+| Q7 | Initial Norma version string (`0.1.0` vs track faber minors independently)? | Needs a first number in norma `cista.toml` |
 
 ## Relationship to other docs
 
-- Parent: `goal.md` Phase B section — **update after this lock** so delivery does
-  not implement the stale manifest-bindings Norma sketch.
-- Phase A delivery: `phase-a-delivery.md` — contract to extend, not replace.
-- Sibling faber `unified-package-manifest` — overlapping library-install ideas;
-  Phase B here is **cista-store + faber.lock** path, not `FABER_LIBRARY_HOME`
-  clone install as the long-term consumer model.
+- Parent: `goal.md` Phase B section — **rewrite next** to match this lock.
+- Phase A delivery: `phase-a-delivery.md` — third-party dep rules stay; Norma is
+  the exception as platform default.
+- Sibling faber `unified-package-manifest` — do not conflate with cista-store path.
 
-## Next step after lock
+## Next step
 
-1. Confirm or amend **Recommended problem lock** and **Q1–Q5**.
-2. Rewrite parent goal’s Norma TOML / Phase B bullets to match.
-3. Compile Phase B delivery spec (install tree + lock + faber resolve + demo).
-4. Factory implement.
+1. ~~Confirm Q1–Q5~~ (done).
+2. Rewrite parent goal’s Norma / Phase B sections.
+3. Resolve Q6 (default provision mechanism) in delivery spec.
+4. Phase B delivery spec + factory implement.
 
 ---
 
-*This document is the problem iteration artifact. It is not a delivery spec and
-not authorization to implement until the recommended lock is accepted.*
+*Problem lock accepted for Q1–Q5. Q6 is delivery design, not product ambiguity.*
