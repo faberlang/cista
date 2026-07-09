@@ -1,5 +1,5 @@
 use crate::cli::InstallArgs;
-use crate::faber_lock::{self, locked_from_install};
+use crate::faber_lock::{self, locked_from_install, InstalledLockInput};
 use crate::manifest::{
     BindingPolicy, CistaManifest, SourceKind, SourceSection, TargetFlags, TargetMode, TargetSection,
 };
@@ -320,23 +320,19 @@ fn rewrite_project_lock(
         .crate_name
         .as_deref()
         .unwrap_or(package);
-    let record = locked_from_install(
-        package,
+    let record = locked_from_install(InstalledLockInput {
+        name: package,
         version,
-        &checked.package_root,
-        &installed.package_store_root,
-        &checked.manifest.target.language,
-        &installed.target_triple,
-        installed.artifact_name.as_path(),
+        source_path: &checked.package_root,
+        package_store_root: &installed.package_store_root,
+        target_language: &checked.manifest.target.language,
+        target_triple: &installed.target_triple,
+        artifact_name: installed.artifact_name.as_path(),
         crate_name,
-        &installed.rustc_version,
-        if installed.interfaces_only {
-            "source"
-        } else {
-            "source"
-        },
-        !installed.interfaces_only && !installed.artifact_name.as_os_str().is_empty(),
-    );
+        rustc: &installed.rustc_version,
+        kind: "source",
+        has_artifact: !installed.interfaces_only && !installed.artifact_name.as_os_str().is_empty(),
+    });
 
     let lock_path = faber_lock::lock_path(project_root);
     let mut lock = faber_lock::read_lock(&lock_path).map_err(|err| vec![err])?;

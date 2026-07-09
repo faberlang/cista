@@ -86,42 +86,45 @@ pub fn absolute_display(path: &Path) -> String {
 ///
 /// When `has_artifact` is false (interfaces-only install), `artifact` is left
 /// empty and omitted on serialize.
-pub fn locked_from_install(
-    name: &str,
-    version: &str,
-    source_path: &Path,
-    package_store_root: &Path,
-    target_language: &str,
-    target_triple: &str,
-    artifact_name: &Path,
-    crate_name: &str,
-    rustc: &str,
-    kind: &str,
-    has_artifact: bool,
-) -> LockedPackage {
-    let package_root = absolute_display(package_store_root);
-    let target_dir = package_store_root
+pub struct InstalledLockInput<'a> {
+    pub name: &'a str,
+    pub version: &'a str,
+    pub source_path: &'a Path,
+    pub package_store_root: &'a Path,
+    pub target_language: &'a str,
+    pub target_triple: &'a str,
+    pub artifact_name: &'a Path,
+    pub crate_name: &'a str,
+    pub rustc: &'a str,
+    pub kind: &'a str,
+    pub has_artifact: bool,
+}
+
+pub fn locked_from_install(input: InstalledLockInput<'_>) -> LockedPackage {
+    let package_root = absolute_display(input.package_store_root);
+    let target_dir = input
+        .package_store_root
         .join("targets")
-        .join(target_language)
-        .join(target_triple);
-    let artifact = if has_artifact && !artifact_name.as_os_str().is_empty() {
-        absolute_display(&target_dir.join(artifact_name))
+        .join(input.target_language)
+        .join(input.target_triple);
+    let artifact = if input.has_artifact && !input.artifact_name.as_os_str().is_empty() {
+        absolute_display(&target_dir.join(input.artifact_name))
     } else {
         String::new()
     };
     LockedPackage {
-        name: name.to_owned(),
-        version: version.to_owned(),
-        source: format!("path:{}", absolute_display(source_path)),
+        name: input.name.to_owned(),
+        version: input.version.to_owned(),
+        source: format!("path:{}", absolute_display(input.source_path)),
         package_root: package_root.clone(),
-        kind: kind.to_owned(),
-        target_language: target_language.to_owned(),
-        target_triple: target_triple.to_owned(),
+        kind: input.kind.to_owned(),
+        target_language: input.target_language.to_owned(),
+        target_triple: input.target_triple.to_owned(),
         target_manifest: absolute_display(&target_dir.join("cista.toml")),
-        interface_root: absolute_display(&package_store_root.join("interfaces")),
+        interface_root: absolute_display(&input.package_store_root.join("interfaces")),
         artifact,
-        crate_name: crate_name.to_owned(),
-        rustc: rustc.to_owned(),
+        crate_name: input.crate_name.to_owned(),
+        rustc: input.rustc.to_owned(),
     }
 }
 
