@@ -1,6 +1,6 @@
 # Phase B Delivery — Norma Platform Default Foundation
 
-**Status**: foundation milestone delivered (2026-07-09)
+**Status**: foundation + faber consume proof delivered (2026-07-09)
 **Parent goal**: [`goal.md`](goal.md)
 **Problem lock**: [`phase-b-problem.md`](phase-b-problem.md)
 
@@ -50,11 +50,14 @@ This delivery adds a regression proof:
   into a temp store, rewrites a project lock without a `[dependencies]` entry,
   verifies the store `interfaces/` tree, and asserts the lock/target manifest
   have no artifact or binding rows.
+- `faber` regression
+  `compile_package_prefers_locked_norma_interfaces_over_library_home_without_dependency`
+  compiles a package that imports a nested `norma:*` module without declaring
+  `norma` in `faber.toml`; the test gives `FABER_LIBRARY_HOME` a conflicting
+  fallback module and proves the locked `interface_root` is used first.
 
 ## Remaining Phase B Work
 
-- Prove sibling `faber` consumes a locked `norma` platform-default record before
-  falling back to `FABER_LIBRARY_HOME` for provider `norma`.
 - Decide the exact provisioning mechanism for installed toolchains:
   cista/bootstrap lock injection vs a toolchain-owned default lock record.
 - Add an end-to-end packaged-path build/check proof using real
