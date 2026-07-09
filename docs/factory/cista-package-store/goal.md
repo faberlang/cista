@@ -1,6 +1,6 @@
 # Goal: Cista Package Store Model
 
-**Status**: active — phased implementation plan (library store → Norma → bins → run → meta → registry)
+**Status**: active — Phase A shipped (local library store loop); next: B Norma → C bins → D run → E meta → F registry
 **Created**: 2026-06-21
 **Updated**: 2026-07-08
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
@@ -682,7 +682,7 @@ Phases A–F.
 
 ### Phase A — Finish local library store (close the loop)
 
-**Status intent:** next implementation focus.
+**Status intent:** shipped (factory Phase A).
 
 - Keep `faber` and `cista` repo-separated: no Rust dependency in either
   direction; process spawning and file contracts only.
