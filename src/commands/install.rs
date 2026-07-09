@@ -1,9 +1,11 @@
 use crate::cli::InstallArgs;
+use crate::faber_lock::{self, locked_from_install};
 use crate::manifest::{
     CistaManifest, SourceKind, SourceSection, TargetFlags, TargetMode, TargetSection,
 };
+use crate::project_manifest::{self, PROJECT_MANIFEST};
 
-use super::{fs, fs_util, rust_target, shared, CommandResult, Path, PathBuf};
+use super::{env, fs, fs_util, rust_target, shared, CommandResult, Path, PathBuf};
 
 pub fn run(args: InstallArgs) -> CommandResult {
     let checked = shared::validate_package(
@@ -13,11 +15,26 @@ pub fn run(args: InstallArgs) -> CommandResult {
         args.verify_target_build,
     )?;
     let store_root = shared::resolve_store_root(args.store.as_deref()).map_err(|err| vec![err])?;
-    install_checked_package(&checked, &store_root)?;
+    let installed = install_checked_package(&checked, &store_root)?;
+
+    if let Some(project_root) = resolve_project_root(args.project.as_deref())? {
+        rewrite_project_lock(&project_root, &checked, &installed)?;
+    }
+
     Ok(())
 }
 
-fn install_checked_package(checked: &shared::CheckedPackage, store_root: &Path) -> CommandResult {
+struct InstalledPaths {
+    package_store_root: PathBuf,
+    target_triple: String,
+    rustc_version: String,
+    artifact_name: PathBuf,
+}
+
+fn install_checked_package(
+    checked: &shared::CheckedPackage,
+    store_root: &Path,
+) -> Result<InstalledPaths, Vec<String>> {
     let manifest = &checked.manifest;
     ensure_rust_source_install(manifest)?;
 
@@ -29,7 +46,7 @@ fn install_checked_package(checked: &shared::CheckedPackage, store_root: &Path) 
     let package_store_root = shared::package_store_root(store_root, manifest);
     install_interfaces(&checked.package_root, manifest, &package_store_root)
         .map_err(|err| vec![err])?;
-    install_built_rust_target(
+    let artifact_name = install_built_rust_target(
         manifest,
         &artifact,
         &package_store_root,
@@ -44,7 +61,13 @@ fn install_checked_package(checked: &shared::CheckedPackage, store_root: &Path) 
         manifest.source.version,
         package_store_root.display()
     );
-    Ok(())
+
+    Ok(InstalledPaths {
+        package_store_root,
+        target_triple,
+        rustc_version,
+        artifact_name,
+    })
 }
 
 fn ensure_rust_source_install(manifest: &CistaManifest) -> CommandResult {
@@ -84,7 +107,7 @@ fn install_built_rust_target(
     package_store_root: &Path,
     target_triple: &str,
     rustc_version: &str,
-) -> Result<(), String> {
+) -> Result<PathBuf, String> {
     let target_destination = package_store_root
         .join("targets")
         .join(&manifest.target.language)
@@ -112,7 +135,8 @@ fn install_built_rust_target(
         Path::new(artifact_name),
         target_triple,
         rustc_version,
-    )
+    )?;
+    Ok(PathBuf::from(artifact_name))
 }
 
 fn write_installed_target_manifest(
@@ -174,4 +198,68 @@ fn compile_flags(manifest: &CistaManifest) -> Option<TargetFlags> {
     manifest.target.compile.as_ref().map(|compile| TargetFlags {
         edition: Some(compile.edition.clone()),
     })
+}
+
+/// Prefer `--project`; else cwd when it contains faber.toml; else None (store-only).
+fn resolve_project_root(explicit: Option<&Path>) -> Result<Option<PathBuf>, Vec<String>> {
+    if let Some(path) = explicit {
+        let root = shared::normalize_path(path);
+        let manifest = root.join(PROJECT_MANIFEST);
+        if !manifest.is_file() {
+            return Err(vec![format!(
+                "project root missing {}: {}",
+                PROJECT_MANIFEST,
+                root.display()
+            )]);
+        }
+        return Ok(Some(root));
+    }
+
+    let cwd = env::current_dir().map_err(|err| vec![format!("failed to read cwd: {err}")])?;
+    let manifest = cwd.join(PROJECT_MANIFEST);
+    if manifest.is_file() {
+        Ok(Some(shared::normalize_path(&cwd)))
+    } else {
+        Ok(None)
+    }
+}
+
+fn rewrite_project_lock(
+    project_root: &Path,
+    checked: &shared::CheckedPackage,
+    installed: &InstalledPaths,
+) -> CommandResult {
+    let project_manifest_path = project_root.join(PROJECT_MANIFEST);
+    let project_manifest =
+        project_manifest::read_project_manifest(&project_manifest_path).map_err(|err| vec![err])?;
+    let package = &checked.manifest.source.package;
+    let version = &checked.manifest.source.version;
+    project_manifest::require_exact_dependency(&project_manifest, package, version)
+        .map_err(|err| vec![err])?;
+
+    let crate_name = checked
+        .manifest
+        .target
+        .crate_name
+        .as_deref()
+        .unwrap_or(package);
+    let record = locked_from_install(
+        package,
+        version,
+        &checked.package_root,
+        &installed.package_store_root,
+        &checked.manifest.target.language,
+        &installed.target_triple,
+        &installed.artifact_name,
+        crate_name,
+        &installed.rustc_version,
+        "source",
+    );
+
+    let lock_path = faber_lock::lock_path(project_root);
+    let mut lock = faber_lock::read_lock(&lock_path).map_err(|err| vec![err])?;
+    faber_lock::upsert_package(&mut lock, record);
+    faber_lock::write_lock(&lock_path, &lock).map_err(|err| vec![err])?;
+    println!("updated lock: {}", lock_path.display());
+    Ok(())
 }

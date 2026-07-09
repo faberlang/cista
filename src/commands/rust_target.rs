@@ -74,9 +74,15 @@ pub(super) fn rust_cargo_paths(
 }
 
 pub(super) fn run_cargo(cargo_toml: &Path, cargo_args: &[&str], label: &str) -> Result<(), String> {
+    // Subcommand first, then --manifest-path (cargo rejects global --manifest-path
+    // before the subcommand on modern toolchains).
     let mut command = Command::new("cargo");
+    let (head, rest) = cargo_args
+        .split_first()
+        .ok_or_else(|| format!("{label}: cargo_args must include a subcommand"))?;
+    command.arg(head);
     command.arg("--manifest-path").arg(cargo_toml);
-    for arg in cargo_args {
+    for arg in rest {
         command.arg(arg);
     }
     let status = command.status().map_err(|err| {

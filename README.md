@@ -43,9 +43,10 @@ cargo build --release
 
 ## Status
 
-Early skeleton: CLI grammar and store concepts are in place; many commands are
-still staged. The long-term product is the cista.dev registry plus this binary
-and library.
+Local library store loop (Phase A): `check`, `install --path` (with optional
+`--project` / cwd `faber.lock` rewrite), store `package list|show|files`,
+`inspect`, and `remove` are implemented. Registry and several other verbs remain
+staged.
 
 ## Factory goals
 

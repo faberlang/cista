@@ -31,7 +31,7 @@ pub struct SourceSection {
     pub sources: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SourceKind {
     Source,
@@ -64,14 +64,24 @@ pub struct TargetSection {
     pub compile: Option<CompileSection>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TargetMode {
     Compile,
     Artifact,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+impl TargetMode {
+    /// Manifest spelling for this target mode.
+    pub const fn kebab_name(self) -> &'static str {
+        match self {
+            Self::Compile => "compile",
+            Self::Artifact => "artifact",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BindingPolicy {
     Generated,

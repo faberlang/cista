@@ -108,9 +108,9 @@ pub struct PackageCommand {
 /// Package inspection grammar.
 #[derive(Subcommand, Debug)]
 pub enum PackageSubcommand {
-    /// List packages visible in the selected store/cache
-    List,
-    /// Show package identity, source, version, interfaces, and runtimes
+    /// List packages visible in the selected store
+    List(StoreArg),
+    /// Show package identity, source, version, interfaces, and targets
     Show(PackageArg),
     /// List files owned by a package
     Files(PackageArg),
@@ -118,6 +118,14 @@ pub enum PackageSubcommand {
     Interfaces(PackageArg),
     /// List runtime bindings exposed by a package
     Runtimes(PackageArg),
+}
+
+/// Optional store root argument.
+#[derive(Args, Debug)]
+pub struct StoreArg {
+    /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
+    #[arg(long)]
+    pub store: Option<PathBuf>,
 }
 
 /// Runtime inspection subcommands.
@@ -205,6 +213,10 @@ pub struct InstallArgs {
     #[arg(long)]
     pub store: Option<PathBuf>,
 
+    /// Project root containing faber.toml; when set (or when cwd has faber.toml), rewrite faber.lock
+    #[arg(long)]
+    pub project: Option<PathBuf>,
+
     /// Verify the selected target implementation can be built by its native tool before install
     #[arg(long)]
     pub verify_target_build: bool,
@@ -213,8 +225,12 @@ pub struct InstallArgs {
 /// Package identifier argument.
 #[derive(Args, Debug)]
 pub struct PackageArg {
-    /// Package identifier
+    /// Package identifier (`name` or `name@version`)
     pub package: String,
+
+    /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
+    #[arg(long)]
+    pub store: Option<PathBuf>,
 }
 
 /// Optional package identifier argument.
@@ -229,6 +245,10 @@ pub struct OptionalPackageArg {
 pub struct PackageOrPathArg {
     /// Package identifier or filesystem path
     pub value: String,
+
+    /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
+    #[arg(long)]
+    pub store: Option<PathBuf>,
 }
 
 /// Manifest path argument.

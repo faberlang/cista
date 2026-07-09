@@ -51,18 +51,7 @@ pub(super) fn validate_package(
 }
 
 pub(super) fn resolve_store_root(explicit_store: Option<&Path>) -> Result<PathBuf, String> {
-    if let Some(path) = explicit_store {
-        return Ok(normalize_path(path));
-    }
-    if let Some(path) = super::env::var_os("CISTAE_HOME") {
-        return Ok(normalize_path(Path::new(&path)));
-    }
-    let Some(home) = super::env::var_os("HOME") else {
-        return Err(
-            "CISTAE_HOME is not set and HOME is unavailable; pass --store explicitly".to_owned(),
-        );
-    };
-    Ok(PathBuf::from(home).join(".faber").join("cistae"))
+    crate::store::store_root(explicit_store)
 }
 
 pub(super) fn package_store_root(store_root: &Path, manifest: &CistaManifest) -> PathBuf {
@@ -72,7 +61,7 @@ pub(super) fn package_store_root(store_root: &Path, manifest: &CistaManifest) ->
 }
 
 pub(super) fn normalize_path(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    crate::store::normalize_path(path)
 }
 
 fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<String>) {

@@ -8,11 +8,15 @@ pub mod cache;
 pub mod cli;
 pub mod commands;
 pub mod diagnostics;
+pub mod faber_lock;
 pub mod manifest;
 pub mod package;
+pub mod project_manifest;
 pub mod resolver;
 pub mod runtime;
+pub mod store;
 pub mod target;
 
 /// Current architectural status of the crate.
-pub const STATUS: &str = "check and local install implemented; other commands staged";
+pub const STATUS: &str =
+    "check, local install, store inspect/remove, and faber.lock rewrite implemented; registry staged";
