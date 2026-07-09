@@ -1,10 +1,11 @@
 # Goal: Cista Package Store Model
 
-**Status**: active — Phase A shipped (local library store loop); next: B Norma → C bins → D run → E meta → F registry
+**Status**: active — Phase A shipped; Phase B problem locked (Norma as platform default package); next: B implement → C bins → D run → E meta → F registry
 **Created**: 2026-06-21
 **Updated**: 2026-07-08
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
 **Factory Artifact Dir**: `docs/factory/cista-package-store/`
+**Related**: `phase-a-delivery.md` (shipped), `phase-b-problem.md` (problem lock)
 **Note**: Implementation lives in public sibling `faberlang/cista` (no radix dep;
 no crate dependency on sibling `faber`).
 **Primary Goal**: ship Faber's shared package artifact store, install lifecycle,
@@ -30,11 +31,14 @@ include Faber interfaces for typechecking, plus either compiled target
 artifacts or source plus compile policy. Project directories hold manifests,
 lockfiles, and project source only.
 
-**Shipped today (partial):** `cista check` and `cista install --path` for Rust
-**library** packages (mathesis-style). Most other CLI verbs are staged stubs.
+**Shipped (Phase A):** `cista check`, `install --path` (with project-root
+`faber.lock` rewrite), store `package list|show|files`, `inspect`, `remove`;
+`faber` consumes `faber.toml` `[dependencies]` + `faber.lock` for third-party
+providers. Registry and several other verbs remain staged.
 
-**Sequencing principle:** close the **local library** loop and Norma packaging
-before binary apps, `cista run`, meta packages, or the public registry.
+**Sequencing principle:** close the **local library** loop (A) and Norma as
+platform-default package (B) before binary apps, `cista run`, meta packages, or
+the public registry.
 
 ## Problem
 
@@ -57,8 +61,10 @@ before binary apps, `cista run`, meta packages, or the public registry.
   source packages, simple Faber-only libraries, and target-portable libraries
   may ship source plus enough manifest policy for the consumer's local toolchain
   to compile the package.
-- Target-native implementation knowledge is beginning to leak into Faber
-  interface files through annotations such as `@ verte rs "..."`.
+- Live Norma is pure Faber source under `norma/src` (no `@ verte` / `@ subsidia`
+  in public sources). Host I/O uses `ad` routes; language carriers live in
+  **`faber-runtime`**, not a Rust `norma` crate. Packaging Norma must not invent
+  a hand-written `libnorma.rlib` as the default story.
 - The user-facing package concept is named `cista`. The low-level crate and CLI
   may also be named `cista`, but high-level project workflows still belong in
   the `faber` command.
@@ -69,8 +75,9 @@ before binary apps, `cista run`, meta packages, or the public registry.
 `~/.faber/cistae`. Project directories contain manifests and lockfiles, not
 installed dependency contents. Installed packages contain Faber interfaces plus
 either compiled target artifacts or source compile policy. Toolchain-bundled
-Norma is a bundled cista package source using the same concepts as other
-packages, not a separate package category.
+Norma uses the **same store package shape** as other packages. Product-wise
+Norma is a **hard platform default** (always available; not listed in app
+`faber.toml` `[dependencies]`), not a second store category.
 
 ## Repo Separation Invariant
 
@@ -117,10 +124,12 @@ Installable units share one store layout but differ by role:
 - Keep installed layout for artifact-distributed and source-distributed packages.
 - Keep Faber interfaces target-neutral; target bindings live in package
   metadata, not `@ verte` / per-target annotations in API files.
-- Finish local **library** install + inspect + **faber** consumption of
-  `faber.lock` package records produced by the package manager (demo consumer).
-- Model **Norma** as a bundled/source package on the same contract as third-party
-  libs (dev fallback via `FABER_LIBRARY_HOME` until that lands).
+- **Phase A (shipped):** local library install + inspect + faber consumption of
+  `faber.lock` for third-party deps (mathesis demo).
+- **Phase B:** model **Norma** as a source package on the same store/`interfaces/`
+  contract; hard platform default (not in app `faber.toml`); independent Norma
+  versioning; package/codegen from locked interface roots; dev fallback via
+  `FABER_LIBRARY_HOME` until packaged path is proven. See `phase-b-problem.md`.
 - Extend install to **bin** packages and introduce **`cista run`** for installed
   apps (coreutils-shaped proof).
 - Support **meta** packages as dependency sets only.
@@ -135,8 +144,11 @@ Installable units share one store layout but differ by role:
 - Do not require full source trees in every install (only source-distributed
   packages).
 - Do not add target-specific annotations to Faber interface files.
-- Do not relocate sibling `norma/src` as a special permanent category; Norma
-  becomes a normal package instance.
+- Do not keep sibling `norma/src` as the only permanent production discovery path;
+  Norma becomes a package instance in the store (repo may keep `src/`; install
+  maps into store `interfaces/`).
+- Do not require apps to list `norma` in `faber.toml` `[dependencies]` (platform
+  default). Do not merge Norma into `faber-runtime`.
 - Do not add Wasm/Go/TS package targets before Rust **lib + bin** is solid.
 - Do not put application packaging (e.g. static site / “web target”) into the
   compiler or into early cista phases.
@@ -265,12 +277,19 @@ $CISTAE_HOME/
                     └── libmathesis.rlib
 ```
 
-The package/version root owns target-neutral interfaces. Each target-specific
-directory owns a target-specific `cista.toml` and the compiled artifact or
-compile metadata for that target.
+The package/version root owns target-neutral **interfaces** (Faber `.fab` API
+tree). Each target-specific directory owns a target-specific `cista.toml` and
+optional compiled artifact or compile metadata.
+
+**`interfaces/` is store vocabulary for every package.** At install, cista
+always materializes the Faber API tree under
+`$CISTAE_HOME/<package>/<version>/interfaces/`, copying from whatever path the
+source package’s `cista.toml` declares (`interfaces = "interfaces"`,
+`interfaces = "src"`, etc.). Source repos need not rename their trees.
 
 Toolchain-bundled packages use the same package/version shape. The only
-difference is their discovery root:
+difference is their discovery root (cista/toolchain-owned; not ordinary faber
+build discovery):
 
 ```text
 <toolchain-root>/
@@ -279,17 +298,22 @@ difference is their discovery root:
 │   └── radix
 └── cistae/
     └── norma/
-        └── 0.36.0/
-            ├── interfaces/
+        └── <norma_version>/          # independent of faber crate version
+            ├── interfaces/           # snapshot of norma/src (tree preserved)
+            │   ├── solum.fab
+            │   ├── solum/
+            │   │   └── path.fab
             │   ├── json.fab
-            │   └── hal/
-            │       └── tempus.fab
-            └── targets/
+            │   └── …
+            └── targets/              # optional / thin for Norma v1
                 └── rust/
-                    └── aarch64-apple-darwin/
-                        ├── cista.toml
-                        └── libnorma.rlib
+                    └── <triple>/
+                        └── cista.toml
 ```
+
+Norma Phase B does **not** require a prebuilt `libnorma.rlib`. Live Norma is
+pure Faber (+ host `ad` routes); `faber-runtime` remains a separate always-linked
+language runtime for generated crates.
 
 ### Store discovery (cista-owned)
 
@@ -398,49 +422,37 @@ This form is for packages whose implementation is Faber source and whose target
 symbols are produced by Faber codegen. No `[[bindings]]` rows are required
 unless the package needs hand-written target implementation hooks.
 
-### Norma-Style Source-Distributed Package
+### Norma Source Package (live model — Phase B)
+
+Live Norma is pure Faber under `norma/src` (multi-module tree). Public sources
+do not use `@ verte` / `@ subsidia`. Host I/O is `ad` routes; language carriers
+are **`faber-runtime`**, not a Norma Rust crate.
 
 ```toml
 [source]
 package = "norma"
-version = "0.36.0"
-faber_min = "0.36.0"
+version = "0.1.0"          # owned by Norma; independent of faber crate version
+faber_min = "0.38.0"       # minimum Faber tool that can consume this package
 kind = "source"
-interfaces = "interfaces"
+interfaces = "src"         # source-repo path; install maps → store interfaces/
 
 [target]
 language = "rust"
 mode = "compile"
-binding_policy = "manifest"
-source = "targets/rust"
-crate = "norma"
-
-[target.compile]
-emit = "library"
-crate_type = "rlib"
-edition = "2021"
-
-[[bindings]]
-source_module = "hal/tempus"
-source_symbol = "MILLISECUNDUM"
-target = "norma::hal::tempus::millisecundum"
-
-[[bindings]]
-source_module = "hal/tempus"
-source_symbol = "nuncNano"
-target = "norma::hal::tempus::nunc_nano"
-
-[[bindings]]
-source_module = "json"
-source_symbol = "parse"
-target = "norma::json::parse"
+binding_policy = "generated"   # Faber bodies; not manifest bindings
+# No [[bindings]] required for default Norma.
+# No libnorma.rlib required for Phase B exit.
 ```
 
-Norma is the larger canonical source-distributed example because it has
-target-neutral Faber interfaces and hand-written Rust runtime code. Current
-`@ subsidia` annotations in Norma interfaces should become target source layout
-in the manifest. Current `@ verte rs "..."` method overrides should become
-`[[bindings]]` rows in the manifest.
+**Platform default:** apps do **not** list `norma` in `faber.toml`
+`[dependencies]`. Norma is always available. Provisioning (toolchain install,
+`cista install` of Norma, or dev sibling layout) supplies absolute interface
+paths faber can use without discovering `$CISTAE_HOME`.
+
+**Manifest bindings** remain the right model for packages with hand-written
+target code (e.g. lab mathesis), not for default Norma.
+
+See `phase-b-problem.md` for the full problem lock.
 
 ## Resolver Output
 
@@ -480,7 +492,7 @@ lockfile. The minimal project manifest syntax is:
 mathesis = "0.1.0"
 ```
 
-Phase A dependency rules:
+Phase A dependency rules (third-party):
 
 - Dependency keys are package/provider names used by provider-qualified imports
   such as `mathesis:mathesis`.
@@ -488,11 +500,18 @@ Phase A dependency rules:
 - Dependencies are direct only; no transitive solving.
 - No registry source syntax and no path dependencies in `faber.toml`.
 - Packages enter the shared store through `cista install --path ...`.
-- `faber check` / `faber build` validate that provider-qualified imports are
-  declared in `faber.toml`, pinned in `faber.lock`, and backed by explicit
-  interface/artifact paths from the lock.
+- `faber check` / `faber build` validate that third-party provider-qualified
+  imports are declared in `faber.toml`, pinned in `faber.lock`, and backed by
+  explicit interface/artifact paths from the lock.
 - `faber` must not discover `$CISTAE_HOME`, call `cista`, or interpret
   cista-specific store roots during normal builds.
+
+**Norma (Phase B):** not a third-party dep line. Provider `norma` is a hard
+platform default — always available without `faber.toml` `[dependencies]`.
+Packaged mode still uses absolute interface paths (implicit lock / toolchain
+default provision / equivalent), never faber-side store discovery. Dev mode may
+use `FABER_LIBRARY_HOME` / sibling `norma/src` until packaged provision is
+proven.
 
 ## Lockfile Role
 
@@ -713,25 +732,36 @@ root updates `examples/cista-lab/demo/faber.lock`, then demo `faber build`
 succeeds using only locked interface/artifact paths (+ documented fallback if
 any).
 
-### Phase B — Norma as first real stdlib package
+### Phase B — Norma as platform-default package
 
-- Norma package manifest (`mode = "compile"`, `binding_policy = "manifest"` as
-  appropriate).
-- Same resolver contract as third-party libs; bundled vs user-store instances
-  share layout concepts.
-- Move target binding facts out of Faber interfaces into package metadata where
-  still leaking.
+**Status intent:** next implementation focus (problem locked in
+`phase-b-problem.md`).
+
+- Add Norma package identity: `cista.toml` with independent **Norma version**,
+  `kind = "source"`, `interfaces = "src"`, `binding_policy = "generated"`.
+- Keep `norma/src` in the Norma repo; install maps into store
+  `…/norma/<norma_ver>/interfaces/` (same universal install mapping as every
+  package — not Norma-only).
+- Preserve multi-module tree (`solum/path`, `json/solve`, …).
+- **Do not** require `libnorma.rlib` or `[[bindings]]` for default Norma.
+- **Do not** list `norma` in app `faber.toml` `[dependencies]` (hard platform
+  default). Third-party deps stay explicit (Phase A).
+- **Do not** merge Norma into `faber-runtime`; runtime remains the always-linked
+  language carrier crate for generated Rust.
+- Same store layout concepts as third-party packages; bundled vs user-store
+  instances differ only by root (cista/toolchain discovery).
+- Provision packaged Norma paths for faber without teaching faber about cista:
+  implicit lock injection, toolchain default path records, or equivalent
+  (delivery chooses mechanism — Q6 in `phase-b-problem.md`).
 - Preserve **dev fallback** (`FABER_LIBRARY_HOME` / sibling `norma`) until the
-  package-manager path is proven; `cista` fails closed with searched-path
-  diagnostics when store lookup is required and fails.
-- Package manager installs or bundles Norma and writes the same `faber.lock`
-  path contract Phase A established; `faber` still does not discover
-  `$CISTAE_HOME` or call `cista`.
+  packaged path is proven; `cista` fails closed with searched-path diagnostics
+  when store lookup is required and fails.
+- `faber` still does not discover `$CISTAE_HOME` or call `cista`.
 
-**Exit:** a Faber package typechecks/links against Norma using locked
-interface/artifact paths produced by package-manager install (or toolchain
-bundled install writing the same lock contract), not only a sibling checkout
-via `FABER_LIBRARY_HOME`.
+**Exit:** a Faber package typechecks/builds against `norma:*` using packaged
+interface paths (not only sibling `FABER_LIBRARY_HOME`), **without** declaring
+`norma` in `faber.toml`, while third-party packages continue to use explicit
+deps + lock. Dev sibling fallback still works when packaged Norma is absent.
 
 ### Phase C — Binary packages (coreutils-shaped)
 
@@ -812,15 +842,19 @@ the source tree on disk.
 - Source vs artifact distribution and generated vs manifest binding policies
   remain defined.
 - Package roles **lib / bin / meta** are defined; meta is deps-only.
-- Norma is an instance of the general package model, not a permanent special case.
+- Norma is a **store package instance** (same `interfaces/` layout) and a
+  **platform default** (not an app dependency line; version independent of faber).
+- `faber-runtime` is not the Norma package.
 - `cista run` is defined as executing an **installed bin entry**, not building
   arbitrary source trees.
 
 ### Delivery gates (by phase)
 
-- **A:** inspect/remove + mathesis install + `faber.toml` dependency intent +
-  `faber.lock` pin + faber demo build from locked interface/artifact paths.
-- **B:** Norma resolvable via the same package contract as third-party libs.
+- **A (shipped):** inspect/remove + mathesis install + `faber.toml` dependency
+  intent + `faber.lock` pin + faber demo build from locked paths.
+- **B:** Norma package installable to store; `norma:*` builds from packaged
+  interface paths without `norma` in `faber.toml`; dev fallback still works;
+  no faber/`CISTAE_HOME` coupling.
 - **C:** at least one coreutils-style bin installable to the store.
 - **D:** `cista run` works for that installed bin with arg passthrough.
 - **E:** meta install expands dependencies (when implemented).
@@ -845,11 +879,15 @@ the source tree on disk.
 - A future delivery spec should include a fixture proving that a source package
   installed in `$CISTAE_HOME` can be compiled locally for the active target and
   cached outside the consuming project.
-- A future delivery spec should include a Norma-oriented fixture proving that
-  hand-written Rust runtime sources compile through manifest policy and that
-  bindings resolve without `@ subsidia` or `@ verte` in the interface files.
+- A Phase B delivery spec should prove: `cista install` of Norma materializes
+  `…/norma/<ver>/interfaces/` tree from `norma/src`; a consumer without
+  `norma` in `faber.toml` builds `norma:*` from packaged interface paths with
+  library-home unused for provider `norma`; sibling fallback still works when
+  packaged Norma is absent.
 - Review check: the accepted model should not require editing
   `../norma/src/*.fab` to add a new target runtime such as Wasm.
+- Review check: default Norma does not require `libnorma.rlib` or reintroducing
+  `@ verte` / `@ subsidia` into public Norma sources.
 
 ## Open Questions
 
@@ -877,8 +915,25 @@ the source tree on disk.
 - Diagnostics: store/env failures are `cista`; lock/path/import failures during
   build are `faber`.
 
+### Explicitly decided for Phase B
+
+- Norma is a **hard platform default**: not listed in app `faber.toml`
+  `[dependencies]`; always available for `norma:*`.
+- Norma is **versioned independently** of the faber crate; store path uses
+  Norma’s own version.
+- Live Norma is pure Faber + `ad` routes + separate **`faber-runtime`**; default
+  policy is `binding_policy = "generated"`, not manifest bindings / `libnorma`.
+- Store `interfaces/` is **universal**; install maps `cista.toml`’s
+  `interfaces = "…"` path (e.g. Norma `src`) into `…/<pkg>/<ver>/interfaces/`.
+- Keep `norma/src` in-repo; map at install (no forced restructure).
+- Phase B does not require shared Norma rlib caching (codegen from interfaces).
+- Full problem lock: `phase-b-problem.md`.
+
 ### Deferred
 
+- Exact provision mechanism for default Norma paths (implicit lock injection vs
+  toolchain default path table — delivery Q6).
+- Initial Norma version number string (delivery Q7).
 - Do store packages keep a separate `cista.toml` forever, or does `faber.toml`
   gain installable package fields for published units? (Later packaging design.)
 - How is **bin** role spelled in the manifest (field on `[source]`, `[target]`,
@@ -910,6 +965,10 @@ the source tree on disk.
   files for every supported backend.
 - Stop if the package model only works for Norma and cannot describe a future
   non-Norma provider.
+- Stop if Norma packaging invents a permanent special store category or forces
+  apps to declare `norma` in `faber.toml` as if it were third-party.
+- Stop if Norma is merged into `faber-runtime` or a fake default `libnorma.rlib`
+  becomes the only supported Norma story.
 - Stop if installed **bin** behavior still depends exclusively on repository
   layout (relative monorepo imports as the only way to share helpers).
 - Stop if adding Wasm or another target would require editing existing

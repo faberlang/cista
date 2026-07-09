@@ -392,7 +392,7 @@ Phase B is done when **all** of the following are true:
 ## Next step
 
 1. ~~Confirm Q1–Q5~~ (done).
-2. Rewrite parent goal’s Norma / Phase B sections.
+2. ~~Rewrite parent goal’s Norma / Phase B sections~~ (done in `goal.md`).
 3. Resolve Q6 (default provision mechanism) in delivery spec.
 4. Phase B delivery spec + factory implement.
 
