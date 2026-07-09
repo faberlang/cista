@@ -58,8 +58,14 @@ This delivery adds a regression proof:
 
 ## Remaining Phase B Work
 
-- Decide the exact provisioning mechanism for installed toolchains:
-  cista/bootstrap lock injection vs a toolchain-owned default lock record.
+- Provisioning decision: use **cista install/bootstrap lock injection** for the
+  platform-default Norma record. Installed or bootstrapped toolchains should
+  leave projects with a concrete `faber.lock` package entry for `norma`; `faber`
+  consumes that lock record and does not discover `$CISTAE_HOME` directly during
+  normal builds.
+- Keep `FABER_LIBRARY_HOME` as the development fallback only when the lock has
+  no `norma` package record. Option 3 manual install is an interim operator
+  path, not the final installed-toolchain story.
 - Add an end-to-end packaged-path build/check proof using real
   `../norma/cista.toml` and a real app that imports at least one nested
   `norma:*` module.

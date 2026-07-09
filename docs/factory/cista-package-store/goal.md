@@ -1,6 +1,6 @@
 # Goal: Cista Package Store Model
 
-**Status**: active — Phase A shipped; Phase B foundation milestone delivered (Norma platform-default package); next: B faber consume proof → C bins → D run → E meta → F registry
+**Status**: active — Phase A shipped; Phase B foundation + faber consume proof delivered; default Norma provision recorded as cista/bootstrap lock injection; next: real-norma packaged-path proof → C bins → D run → E meta → F registry
 **Created**: 2026-06-21
 **Updated**: 2026-07-08
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
@@ -931,8 +931,9 @@ the source tree on disk.
 
 ### Deferred
 
-- Exact provision mechanism for default Norma paths (implicit lock injection vs
-  toolchain default path table — delivery Q6).
+- Bootstrap/install UX for injecting the platform-default Norma lock record in
+  installed toolchains. Decision is cista/bootstrap lock injection; remaining
+  work is UX and real-toolchain proof, not faber-side `$CISTAE_HOME` discovery.
 - Initial Norma version number string (delivery Q7).
 - Do store packages keep a separate `cista.toml` forever, or does `faber.toml`
   gain installable package fields for published units? (Later packaging design.)
