@@ -239,13 +239,13 @@ Before lowering this goal into delivery, inspect:
 - `[[bindings]]` entries use structured `source_module` and `source_symbol`
   fields for the Faber API symbol and `target` for the target-language symbol.
   Compact symbol strings are reserved for diagnostics and internal display.
-- Source-distributed packages with pure Faber implementations may use generated
-  binding policy. Source-distributed packages with hand-written target code,
-  including Norma, should use manifest binding policy.
+- Source-distributed packages with pure Faber implementations use generated
+  binding policy. Live **Norma** is in this class. Packages with hand-written
+  target code (e.g. lab mathesis) use manifest binding policy.
 - Target-native runtime implementation knowledge belongs with package target
   metadata, not as per-target annotations in Faber interfaces.
-- Norma should be modeled as the bundled standard package using the same
-  manifest concepts future packages can use.
+- Norma is modeled as a store package instance (same layout concepts) and as a
+  **platform default** (not an app `faber.toml` dependency).
 - Installed binary behavior must not depend on source-repository-relative paths
   unless explicitly running in development mode.
 - Development mode may continue using sibling `norma/src` via `FABER_LIBRARY_HOME`
