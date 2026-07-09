@@ -291,13 +291,18 @@ difference is their discovery root:
                         └── libnorma.rlib
 ```
 
-Discovery order for package artifacts:
+### Store discovery (cista-owned)
+
+Package-manager discovery order for store roots and installed packages. This
+list is used by `cista` only. `faber` does not walk this list during normal
+builds; it consumes absolute paths from `faber.lock`.
 
 1. explicit CLI/config store path
 2. `CISTAE_HOME`
 3. default `~/.faber/cistae`
 4. bundled package root relative to the installed Faber toolchain
 5. development fallback for sibling `norma/src` via `FABER_LIBRARY_HOME`
+   (package-manager / toolchain tooling only; not ordinary `faber build`)
 
 ## Source Package Fixture Layout
 
@@ -500,7 +505,7 @@ Minimal first-pass `faber.lock` shape:
 [[package]]
 name = "mathesis"
 version = "0.1.0"
-source = "path:/Users/ianzepp/work/faberlang/radix/examples/cista-lab/source/mathesis"
+source = "path:/Users/ianzepp/work/faberlang/examples/cista-lab/source/mathesis"
 package_root = "/Users/ianzepp/.faber/cistae/mathesis/0.1.0"
 kind = "source"
 target_language = "rust"
@@ -595,6 +600,22 @@ and should be deferred until the base model is stable.
 should build the selected target artifact and install only the consumable
 package artifact into `$CISTAE_HOME`.
 
+### Project root and `faber.lock` rewrite (Phase A)
+
+When a project root is known, install also rewrites that project's `faber.lock`
+with absolute paths to the installed package. Phase A project-root rule:
+
+- Prefer `--project <dir>` pointing at a directory that contains `faber.toml`.
+- If `--project` is omitted, use the current working directory when it contains
+  `faber.toml`.
+- If no project root is found, install only materializes the store entry and
+  does not create or rewrite a lockfile.
+- Lock rewrite is only valid when the package name and exact version are
+  declared in the project's `faber.toml` `[dependencies]`.
+- Demo flow: from `examples/cista-lab/demo` (or with
+  `--project examples/cista-lab/demo`), install mathesis so the demo
+  `faber.lock` receives locked interface/artifact paths.
+
 ## Transitive Dependencies
 
 The first pass can defer full transitive dependency resolution. It should state
@@ -619,18 +640,36 @@ Mathesis fixture, then generated bindings for a pure Faber source package.
 
 ## Required Diagnostics
 
-The first pass should produce clear diagnostics for:
+Diagnostics are tool-owned. Store-env messaging belongs to `cista`; build-time
+lock and path messaging belongs to `faber`.
+
+### cista (store / install / inspect)
 
 - package not installed
 - requested version not installed
-- interface file missing
-- selected target missing
-- compiled artifact incompatible with the active target/toolchain
-- binding source module or source symbol not found
-- binding target symbol unavailable or unchecked
+- interface file missing from the package or store layout
+- selected target missing under `targets/<language>/…`
+- binding source module or source symbol not found (during `check` / install
+  validation)
+- binding target symbol unavailable or unchecked when verification is requested
 - source package requires local compile but the target compiler is unavailable
 - package store not found, including searched paths and how to set
   `CISTAE_HOME`
+- project root missing `faber.toml` when `--project` or cwd lock rewrite was
+  requested
+- package not declared (or wrong exact version) in the project's
+  `[dependencies]` when a lock rewrite was requested
+
+### faber (build-time lock consumption)
+
+- provider-qualified import not declared in `faber.toml` `[dependencies]`
+- dependency declared in `faber.toml` but missing from `faber.lock`
+- locked interface path missing or unreadable
+- locked artifact path missing or unreadable
+- locked target manifest path missing, unreadable, or invalid against the
+  documented target-manifest schema
+- compiled artifact incompatible with the active target/toolchain when faber
+  validates lock facts against the active build
 
 ## Implementation Shape
 
@@ -650,24 +689,29 @@ Phases A–F.
 - Keep `$CISTAE_HOME` / `~/.faber/cistae`, `interfaces/`, `targets/<language>/`.
 - Flesh **inspect / list / remove** against the store (`package show`,
   `package list`, `package files`, `remove` as needed).
-- Finish **demo consumer** (`examples/cista-lab`): install `mathesis`, update
+- Finish **demo consumer** (`examples/cista-lab/demo`): install `mathesis` with
+  project root known (`--project` or cwd with `faber.toml`), rewrite
   `faber.lock`, then `faber check` / `faber build` consumes the locked interface
   and Rust artifact paths (no vendored copy in the project).
 - Minimum project dependency intent in `faber.toml` (`[dependencies] mathesis =
   "0.1.0"`).
 - Minimum **`faber.lock`** so the demo pin is deterministic and not based only
   on mutable global store state.
+- Project-root / lock rewrite rule: `--project <dir>` preferred; else cwd when
+  it contains `faber.toml`; store-only install when no project root; lock
+  rewrite requires an exact `[dependencies]` match.
 - `faber` owns build-time dependency consumption by reading `faber.toml` and
   `faber.lock` only; it must not know about `cista`, `CISTAE_HOME`, or
   package-manager store discovery.
 - `cista install --path` may spawn `faber` and native tools for validation/build
   steps, but must not link against `faber` or `radix`.
-- `cista` discovery order remains: explicit path → `CISTAE_HOME` → default home
-  → toolchain-bundled root → dev sibling fallback.
+- `cista` store discovery order remains as under **Store discovery
+  (cista-owned)** above.
 
-**Exit:** on a clean layout, `cista install --path …/mathesis` updates the demo
-`faber.lock`, then demo `faber build` succeeds using only locked
-interface/artifact paths (+ documented fallback if any).
+**Exit:** on a clean layout, `cista install --path …/mathesis` with demo project
+root updates `examples/cista-lab/demo/faber.lock`, then demo `faber build`
+succeeds using only locked interface/artifact paths (+ documented fallback if
+any).
 
 ### Phase B — Norma as first real stdlib package
 
@@ -677,12 +721,17 @@ interface/artifact paths (+ documented fallback if any).
   share layout concepts.
 - Move target binding facts out of Faber interfaces into package metadata where
   still leaking.
-- Preserve **dev fallback** (`FABER_LIBRARY_HOME` / sibling `norma`) until store
-  resolution is proven; fail closed with searched-path diagnostics when store
-  lookup is required and fails.
+- Preserve **dev fallback** (`FABER_LIBRARY_HOME` / sibling `norma`) until the
+  package-manager path is proven; `cista` fails closed with searched-path
+  diagnostics when store lookup is required and fails.
+- Package manager installs or bundles Norma and writes the same `faber.lock`
+  path contract Phase A established; `faber` still does not discover
+  `$CISTAE_HOME` or call `cista`.
 
-**Exit:** a Faber package typechecks/links against Norma via cista resolution,
-not only a sibling checkout.
+**Exit:** a Faber package typechecks/links against Norma using locked
+interface/artifact paths produced by package-manager install (or toolchain
+bundled install writing the same lock contract), not only a sibling checkout
+via `FABER_LIBRARY_HOME`.
 
 ### Phase C — Binary packages (coreutils-shaped)
 
@@ -736,8 +785,8 @@ the source tree on disk.
 
 - Preserve development fallback to sibling `norma/src` via `FABER_LIBRARY_HOME`
   until Phase B is solid.
-- Package-store discovery failures must list searched paths and how to set
-  `CISTAE_HOME`.
+- `cista` package-store discovery failures must list searched paths and how to
+  set `CISTAE_HOME`.
 - Missing target binding metadata must fail package compilation with a clear
   provider/target diagnostic — never silent wrong calls.
 - Store/resolver routing must remain revertible without changing Faber language
@@ -814,6 +863,7 @@ the source tree on disk.
   contract.
 - `CISTAE_HOME` is the Phase A package-manager store environment variable;
   `faber` does not read it during normal builds.
+- Store discovery order is **cista-owned**; `faber` does not walk it.
 - Target-specific manifests sit beside artifacts at
   `targets/<language>/<triple>/cista.toml`.
 - The minimal `faber.lock` record includes package, version, source, package
@@ -821,6 +871,11 @@ the source tree on disk.
   artifact, crate, and rustc version.
 - Phase A Rust artifact compatibility records language, triple, rustc version,
   artifact path, crate name, and manifest flags already present in `cista.toml`.
+- Project root for lock rewrite: `--project <dir>` preferred; else cwd with
+  `faber.toml`; store-only install when no project root; rewrite requires exact
+  `[dependencies]` match.
+- Diagnostics: store/env failures are `cista`; lock/path/import failures during
+  build are `faber`.
 
 ### Deferred
 
