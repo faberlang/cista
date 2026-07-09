@@ -1,6 +1,6 @@
 # Phase B Delivery — Norma Platform Default Foundation
 
-**Status**: foundation + faber consume proof delivered (2026-07-09)
+**Status**: Phase B closed (2026-07-09)
 **Parent goal**: [`goal.md`](goal.md)
 **Problem lock**: [`phase-b-problem.md`](phase-b-problem.md)
 
@@ -43,13 +43,18 @@ Live implementation already carries the foundational path:
   `interfaces = "src"`, `binding_policy = "generated"`, no target source, and
   version `0.1.0`.
 
-This delivery adds a regression proof:
+This delivery adds regression proof:
 
 - `install_norma_platform_default_snapshots_src_interfaces_without_artifact`
   constructs a Norma-shaped source package with a nested module, installs it
   into a temp store, rewrites a project lock without a `[dependencies]` entry,
   verifies the store `interfaces/` tree, and asserts the lock/target manifest
   have no artifact or binding rows.
+- `install_real_norma_platform_default_builds_nested_import_without_dependency`
+  installs real `../norma/cista.toml` into an isolated store, rewrites an app
+  lock without an app `[dependencies].norma` entry, poisons `FABER_LIBRARY_HOME`
+  with a conflicting fallback module, and proves sibling `faber check` and
+  `faber build` consume the locked real Norma nested `norma:solum/path` import.
 - `faber` regression
   `compile_package_prefers_locked_norma_interfaces_over_library_home_without_dependency`
   compiles a package that imports a nested `norma:*` module without declaring
@@ -58,20 +63,24 @@ This delivery adds a regression proof:
 
 ## Remaining Phase B Work
 
-- Provisioning decision: use **cista install/bootstrap lock injection** for the
+- Closed: provisioning decision is **cista install/bootstrap lock injection** for the
   platform-default Norma record. Installed or bootstrapped toolchains should
   leave projects with a concrete `faber.lock` package entry for `norma`; `faber`
   consumes that lock record and does not discover `$CISTAE_HOME` directly during
   normal builds.
-- Keep `FABER_LIBRARY_HOME` as the development fallback only when the lock has
+- Closed: `FABER_LIBRARY_HOME` remains the development fallback only when the lock has
   no `norma` package record. Option 3 manual install is an interim operator
   path, not the final installed-toolchain story.
-- Add an end-to-end packaged-path build/check proof using real
+- Closed: an end-to-end packaged-path build/check proof now uses real
   `../norma/cista.toml` and a real app that imports at least one nested
   `norma:*` module.
+
+Phase B has no remaining work. Phase C+ owns bins, `cista run`, meta packages,
+and registry work.
 
 ## Validation
 
 ```bash
 timeout 300 cargo test install_norma_platform_default_snapshots_src_interfaces_without_artifact -- --format terse
+timeout 300 cargo test install_real_norma_platform_default_builds_nested_import_without_dependency -- --format terse
 ```

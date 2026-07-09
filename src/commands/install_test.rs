@@ -1,6 +1,7 @@
 use super::*;
 use crate::cli::InstallArgs;
 use crate::faber_lock::read_lock;
+use std::process::Command;
 
 fn temp_root(name: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now()
@@ -103,6 +104,99 @@ entry = "main.fab"
         installed_manifest.target.binding_policy,
         BindingPolicy::Generated
     );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn install_real_norma_platform_default_builds_nested_import_without_dependency() {
+    let root = temp_root("real-norma-platform-default");
+    let store = root.join("store");
+    let project = root.join("app");
+    let fake_library_home = root.join("fake-library-home");
+    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("faberlang workspace")
+        .to_path_buf();
+    let norma = workspace.join("norma");
+    let faber_manifest = workspace.join("faber/Cargo.toml");
+
+    fs::create_dir_all(project.join("src")).expect("create project src");
+    fs::create_dir_all(fake_library_home.join("norma/src/solum"))
+        .expect("create fake library home");
+    fs::write(
+        fake_library_home.join("norma/src/solum/path.fab"),
+        "functio nomen(textus via) → textus { redde \"wrong\" }\n",
+    )
+    .expect("write fake fallback interface");
+    fs::write(
+        project.join(PROJECT_MANIFEST),
+        r#"[package]
+name = "norma-lock-proof"
+version = "0.1.0"
+edition = "2026"
+
+[paths]
+source = "src"
+entry = "main.fab"
+"#,
+    )
+    .expect("write project manifest");
+    fs::write(
+        project.join("src/main.fab"),
+        r#"importa ex "norma:solum/path" privata path
+
+incipit {
+    nota path.nomen("/tmp/file.txt")
+}
+"#,
+    )
+    .expect("write project source");
+
+    run(InstallArgs {
+        path: norma.clone(),
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        project: Some(project.clone()),
+        verify_target_build: false,
+    })
+    .expect("install real norma");
+
+    let lock = read_lock(&project.join(faber_lock::LOCK_FILE)).expect("read lock");
+    let norma_lock = lock
+        .packages
+        .iter()
+        .find(|package| package.name == "norma")
+        .expect("norma lock record");
+    assert_eq!(norma_lock.version, "0.1.0");
+    assert!(
+        PathBuf::from(&norma_lock.interface_root)
+            .join("solum/path.fab")
+            .is_file(),
+        "real norma nested interface should be installed"
+    );
+
+    for command in ["check", "build"] {
+        let output = Command::new("cargo")
+            .args([
+                "run",
+                "--manifest-path",
+                faber_manifest.to_str().expect("faber manifest path"),
+                "--",
+                command,
+                project.to_str().expect("project path"),
+            ])
+            .env("FABER_LIBRARY_HOME", &fake_library_home)
+            .output()
+            .unwrap_or_else(|err| panic!("spawn faber {command}: {err}"));
+        assert!(
+            output.status.success(),
+            "faber {command} should consume locked real Norma before fallback\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     fs::remove_dir_all(root).expect("cleanup temp root");
 }

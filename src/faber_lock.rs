@@ -29,7 +29,7 @@ pub struct LockedPackage {
     pub target_manifest: String,
     pub interface_root: String,
     /// Absolute artifact path when present; empty for interfaces-only packages.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(default)]
     pub artifact: String,
     #[serde(rename = "crate")]
     pub crate_name: String,
@@ -85,7 +85,9 @@ pub fn absolute_display(path: &Path) -> String {
 /// Build a lock record for a successfully installed package.
 ///
 /// When `has_artifact` is false (interfaces-only install), `artifact` is left
-/// empty and omitted on serialize.
+/// empty. The field is still serialized because `faber` treats it as part of
+/// the lockfile schema and uses the empty string to distinguish source-only
+/// interfaces from missing lock data.
 pub struct InstalledLockInput<'a> {
     pub name: &'a str,
     pub version: &'a str,
