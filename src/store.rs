@@ -104,10 +104,7 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
 }
 
 /// Resolve `name` or `name@version` in the store.
-pub fn find_installed(
-    store_root: &Path,
-    package_id: &str,
-) -> Result<InstalledPackage, String> {
+pub fn find_installed(store_root: &Path, package_id: &str) -> Result<InstalledPackage, String> {
     let (name, version) = split_package_id(package_id);
     let installed = list_installed(store_root)?;
     let matches: Vec<_> = installed
@@ -162,10 +159,11 @@ pub fn list_package_files(package_root: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = fs::read_dir(dir)
-        .map_err(|err| format!("failed to read {}: {err}", dir.display()))?;
+    let entries =
+        fs::read_dir(dir).map_err(|err| format!("failed to read {}: {err}", dir.display()))?;
     for entry in entries {
-        let entry = entry.map_err(|err| format!("failed to read entry under {}: {err}", dir.display()))?;
+        let entry =
+            entry.map_err(|err| format!("failed to read entry under {}: {err}", dir.display()))?;
         let path = entry.path();
         if path.is_dir() {
             collect_files(root, &path, out)?;

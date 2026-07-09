@@ -18,7 +18,8 @@ pub fn run(args: PackageOrPathArg) -> CommandResult {
                 println!("target_manifest: {}", path.display());
                 print_manifest_summary(&manifest);
             }
-            let files = store::list_package_files(&package.package_root).map_err(|err| vec![err])?;
+            let files =
+                store::list_package_files(&package.package_root).map_err(|err| vec![err])?;
             println!("files: {}", files.len());
             Ok(())
         }

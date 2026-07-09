@@ -28,4 +28,4 @@ Each `goal.md` owns its **Status** line.
 
 | Goal | Status | Entry |
 | ---- | ------ | ----- |
-| Cista package store | active — phases A–F (lib store → Norma → bins → run → meta → registry) | [`cista-package-store/goal.md`](cista-package-store/goal.md) |
+| Cista package store | active — Phase B foundation delivered; next faber consume proof | [`cista-package-store/goal.md`](cista-package-store/goal.md) |

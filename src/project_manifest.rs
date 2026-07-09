@@ -47,8 +47,8 @@ pub fn read_project_manifest(path: &Path) -> Result<ProjectManifest, String> {
 }
 
 fn parse_dependencies_loose(contents: &str, path: &Path) -> Result<ProjectManifest, String> {
-    let value: toml::Value = toml::from_str(contents)
-        .map_err(|err| format!("invalid {}: {err}", path.display()))?;
+    let value: toml::Value =
+        toml::from_str(contents).map_err(|err| format!("invalid {}: {err}", path.display()))?;
     let table = value
         .as_table()
         .ok_or_else(|| format!("invalid {}: root must be a table", path.display()))?;
