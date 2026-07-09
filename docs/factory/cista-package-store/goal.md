@@ -1,11 +1,11 @@
 # Goal: Cista Package Store Model
 
-**Status**: active — Phase A shipped; Phase B foundation + faber consume proof delivered; default Norma provision recorded as cista/bootstrap lock injection; next: real-norma packaged-path proof → C bins → D run → E meta → F registry
+**Status**: active — Phase A shipped; Phase B closed (foundation + faber consume + real-Norma lock path proof); next: Phase C bins → D run → E meta → F registry
 **Created**: 2026-06-21
 **Updated**: 2026-07-08
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
 **Factory Artifact Dir**: `docs/factory/cista-package-store/`
-**Related**: `phase-a-delivery.md` (shipped), `phase-b-problem.md` (problem lock), `phase-b-delivery.md` (foundation milestone)
+**Related**: `phase-a-delivery.md` (shipped), `phase-b-problem.md` (problem lock), `phase-b-delivery.md` (Phase B closed)
 **Note**: Implementation lives in public sibling `faberlang/cista` (no radix dep;
 no crate dependency on sibling `faber`).
 **Primary Goal**: ship Faber's shared package artifact store, install lifecycle,
