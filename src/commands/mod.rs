@@ -23,6 +23,7 @@ mod package;
 mod publish;
 mod remove;
 mod resolve;
+mod run;
 mod runtime;
 mod rust_target;
 mod shared;
@@ -47,6 +48,7 @@ pub fn run(cli: CistaCli) {
         CistaCommand::Resolve(args) => resolve::run(args),
         CistaCommand::Fetch(args) => fetch::run(args),
         CistaCommand::Install(args) => install::run(args),
+        CistaCommand::Run(args) => run::run(args),
         CistaCommand::Remove(args) => remove::run(args),
         CistaCommand::Update(args) => update::run(args),
         CistaCommand::Cache(args) => cache::run(args),

@@ -44,6 +44,9 @@ pub enum CistaCommand {
     /// Install a local package source into the shared package store
     Install(InstallArgs),
 
+    /// Run an executable from an installed binary package
+    Run(RunArgs),
+
     /// Remove a package from the selected package root/cache
     Remove(PackageArg),
 
@@ -220,6 +223,21 @@ pub struct InstallArgs {
     /// Verify the selected target implementation can be built by its native tool before install
     #[arg(long)]
     pub verify_target_build: bool,
+}
+
+/// Installed binary execution arguments.
+#[derive(Args, Debug)]
+pub struct RunArgs {
+    /// Installed package identifier (`name` or `name@version`)
+    pub package: String,
+
+    /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
+    #[arg(long)]
+    pub store: Option<PathBuf>,
+
+    /// Arguments passed to the installed executable after `--`
+    #[arg(last = true)]
+    pub args: Vec<String>,
 }
 
 /// Package identifier argument.
