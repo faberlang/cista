@@ -1,7 +1,8 @@
 use crate::cli::InstallArgs;
 use crate::faber_lock::{self, locked_from_install, InstalledLockInput};
 use crate::manifest::{
-    BindingPolicy, CistaManifest, SourceKind, SourceSection, TargetFlags, TargetMode, TargetSection,
+    self, BindingPolicy, CistaManifest, MetaManifest, PackageRole, SourceKind, SourceSection,
+    TargetFlags, TargetMode, TargetSection,
 };
 use crate::project_manifest::{self, PROJECT_MANIFEST};
 
@@ -12,6 +13,11 @@ use super::{env, fs, fs_util, rust_target, shared, CommandResult, Path, PathBuf}
 const PLATFORM_DEFAULT_PACKAGES: &[&str] = &["norma"];
 
 pub fn run(args: InstallArgs) -> CommandResult {
+    let package_root = shared::normalize_path(&args.path);
+    let manifest_path = manifest::manifest_path(&package_root, Some(&args.manifest));
+    if let Some(meta) = manifest::read_meta_manifest(&manifest_path).map_err(|err| vec![err])? {
+        return install_meta_package(&args, &package_root, &meta);
+    }
     let checked = shared::validate_package(
         &args.path,
         &args.manifest,
@@ -25,6 +31,93 @@ pub fn run(args: InstallArgs) -> CommandResult {
         rewrite_project_lock(&project_root, &checked, &installed)?;
     }
 
+    Ok(())
+}
+
+fn install_meta_package(
+    args: &InstallArgs,
+    package_root: &Path,
+    meta: &MetaManifest,
+) -> CommandResult {
+    if !matches!(meta.source.role, PackageRole::Meta) {
+        return Err(vec![
+            "meta manifest requires source.role = `meta`".to_owned()
+        ]);
+    }
+    shared::validate_identity(&meta.source.package, &meta.source.version)?;
+    if meta.dependencies.is_empty() {
+        return Err(vec![
+            "meta package requires at least one [[dependencies]] row".to_owned(),
+        ]);
+    }
+    if args.project.is_some() {
+        return Err(vec![
+            "meta package install does not rewrite a project lock; omit --project".to_owned(),
+        ]);
+    }
+    let store_root = shared::resolve_store_root(args.store.as_deref()).map_err(|err| vec![err])?;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut checked_dependencies = Vec::with_capacity(meta.dependencies.len());
+    for dependency in &meta.dependencies {
+        let identity = format!("{}@{}", dependency.package, dependency.version);
+        if !seen.insert(identity.clone()) {
+            return Err(vec![format!("duplicate meta dependency `{identity}`")]);
+        }
+        let dependency_path = dependency.path.as_deref().ok_or_else(|| {
+            vec![format!(
+                "local meta dependency `{identity}` requires a relative path"
+            )]
+        })?;
+        let dependency_root = package_root.join(dependency_path);
+        let checked = shared::validate_package(
+            &dependency_root,
+            &args.manifest,
+            Some(&args.target_language),
+            args.verify_target_build,
+        )?;
+        if checked.manifest.source.package != dependency.package
+            || checked.manifest.source.version != dependency.version
+        {
+            return Err(vec![format!(
+                "meta dependency `{identity}` resolves to `{}@{}` at {}",
+                checked.manifest.source.package,
+                checked.manifest.source.version,
+                dependency_root.display()
+            )]);
+        }
+        checked_dependencies.push(checked);
+    }
+    for checked in &checked_dependencies {
+        install_checked_package(checked, &store_root)?;
+    }
+
+    let meta_root = store_root
+        .join(&meta.source.package)
+        .join(&meta.source.version);
+    fs_util::replace_directory(&meta_root).map_err(|err| vec![err])?;
+    let installed_meta = MetaManifest {
+        source: meta.source.clone(),
+        dependencies: meta
+            .dependencies
+            .iter()
+            .cloned()
+            .map(|mut dependency| {
+                dependency.path = None;
+                dependency
+            })
+            .collect(),
+    };
+    let contents = toml::to_string_pretty(&installed_meta)
+        .map_err(|err| vec![format!("failed to render installed meta manifest: {err}")])?;
+    fs::write(meta_root.join(manifest::MANIFEST_FILE), contents)
+        .map_err(|err| vec![format!("failed to write installed meta manifest: {err}")])?;
+    println!(
+        "installed: {} {} -> {} (meta, {} dependencies)",
+        meta.source.package,
+        meta.source.version,
+        meta_root.display(),
+        meta.dependencies.len()
+    );
     Ok(())
 }
 

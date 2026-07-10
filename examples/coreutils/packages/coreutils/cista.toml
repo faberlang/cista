@@ -1,0 +1,9 @@
+[source]
+package = "coreutils"
+version = "0.1.0"
+role = "meta"
+
+[[dependencies]]
+package = "true"
+version = "0.1.0"
+path = "../true"
