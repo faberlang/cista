@@ -12,6 +12,7 @@ pub mod faber_lock;
 pub mod manifest;
 pub mod package;
 pub mod project_manifest;
+pub mod registry_http;
 pub mod resolver;
 pub mod runtime;
 pub mod store;

@@ -826,6 +826,24 @@ remain residual work rather than a fabricated protocol. See
 
 **Exit:** install a published lib or bin without `--path`.
 
+### Phase G — cista.dev HTTP/auth transport
+
+**Active 2026-07-10:** establish the remote client transport independently of
+the filesystem registry. The first slice provides an HTTP(S) client contract,
+optional bearer authentication, strict success-status handling, and local
+loopback contract tests. Credentials fail closed over plain HTTP. Live
+`cista.dev` validation remains environment-gated and is not claimed here.
+
+- Remote API paths are origin-relative and must begin with exactly one `/`.
+- Authenticated requests use `Authorization: Bearer <token>` only over HTTPS.
+- Transport errors and non-success responses are terminal; remote operations
+  must not silently fall back to the local filesystem registry.
+- Package archive endpoints and credential persistence remain later Phase G
+  slices after the server contract is fixed.
+
+**Exit:** a CLI fetch/publish operation can use the authenticated remote
+transport against the fixed cista.dev API without weakening local/dev behavior.
+
 ### Explicitly not in A–D
 
 - Static site / web application packaging.
