@@ -21,6 +21,7 @@ mod logout;
 mod metadata;
 mod package;
 mod publish;
+mod registry;
 mod remove;
 mod resolve;
 mod run;

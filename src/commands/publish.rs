@@ -1,7 +1,10 @@
-use crate::cli::{CistaCommand, PackageArg};
+use crate::cli::PublishArgs;
 
-use super::{staged, CommandResult};
+use super::{registry, CommandResult};
 
-pub fn run(args: PackageArg) -> CommandResult {
-    staged::run(CistaCommand::Publish(args))
+pub fn run(args: PublishArgs) -> CommandResult {
+    let destination = registry::publish(&args.path, &args.manifest, args.registry.as_deref())
+        .map_err(|err| vec![err])?;
+    println!("published: {}", destination.display());
+    Ok(())
 }

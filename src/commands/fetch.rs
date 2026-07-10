@@ -1,7 +1,14 @@
-use crate::cli::{CistaCommand, PackageArg};
+use crate::cli::PackageArg;
 
-use super::{staged, CommandResult};
+use super::{registry, CommandResult};
 
 pub fn run(args: PackageArg) -> CommandResult {
-    staged::run(CistaCommand::Fetch(args))
+    let path = registry::fetch_to_cache(
+        &args.package,
+        args.registry.as_deref(),
+        args.store.as_deref(),
+    )
+    .map_err(|err| vec![err])?;
+    println!("fetched: {} -> {}", args.package, path.display());
+    Ok(())
 }

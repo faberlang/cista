@@ -1,6 +1,6 @@
 # Goal: Cista Package Store Model
 
-**Status**: active — Phases A–E closed; next: Phase F registry
+**Status**: active — Phases A–F local/dev loop closed; next: cista.dev HTTP/auth transport
 **Created**: 2026-06-21
 **Updated**: 2026-07-10
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
@@ -811,6 +811,12 @@ meta identity/pins without stale source paths. See `phase-e-delivery.md`.
 **Exit:** local meta install expands to the expected set of store entries.
 
 ### Phase F — Registry client (cista.dev)
+
+**Local/dev loop closed 2026-07-10:** an explicit filesystem registry supports
+immutable publish, exact fetch into the store-owned cache, and install by
+`name@version` without `--path`. Live cista.dev HTTP, authentication, and yank
+remain residual work rather than a fabricated protocol. See
+`phase-f-delivery.md`.
 
 - `fetch` / `install <name>@ver` from remote; then `publish` / auth as needed.
 - Cista remains the **client**; hosting protocol for cista.dev can evolve in
