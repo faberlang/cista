@@ -55,7 +55,7 @@ fn install_checked_package(
     } else {
         let target_triple = rust_target::rust_host_triple().map_err(|err| vec![err])?;
         let rustc_version = rust_target::rustc_version().map_err(|err| vec![err])?;
-        let artifact = rust_target::build_rust_library(&checked.package_root, manifest)
+        let artifact = rust_target::build_rust_artifact(&checked.package_root, manifest)
             .map_err(|err| vec![err])?;
         let artifact_name = install_built_rust_target(
             manifest,
@@ -145,6 +145,7 @@ fn install_interfaces_only_target(
             version: manifest.source.version.clone(),
             faber_min: manifest.source.faber_min.clone(),
             kind: SourceKind::Source,
+            role: manifest.source.role,
             interfaces: PathBuf::from("../../../interfaces"),
             sources: None,
         },
@@ -244,6 +245,7 @@ fn artifact_manifest(
             version: source_manifest.source.version.clone(),
             faber_min: source_manifest.source.faber_min.clone(),
             kind: SourceKind::Artifact,
+            role: source_manifest.source.role,
             interfaces: PathBuf::from("../../../interfaces"),
             sources: None,
         },

@@ -27,8 +27,30 @@ pub struct SourceSection {
     pub version: String,
     pub faber_min: String,
     pub kind: SourceKind,
+    #[serde(default)]
+    pub role: PackageRole,
     pub interfaces: PathBuf,
     pub sources: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PackageRole {
+    #[default]
+    Lib,
+    Bin,
+    Meta,
+}
+
+impl PackageRole {
+    /// Manifest spelling for this package role.
+    pub const fn kebab_name(self) -> &'static str {
+        match self {
+            Self::Lib => "lib",
+            Self::Bin => "bin",
+            Self::Meta => "meta",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
