@@ -1,6 +1,6 @@
 # Goal: Cista Package Store Model
 
-**Status**: active — Phases A–C closed; next: Phase D run → E meta → F registry
+**Status**: active — Phases A–E closed; next: Phase F registry
 **Created**: 2026-06-21
 **Updated**: 2026-07-10
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
@@ -783,6 +783,11 @@ runnable store entry for the host triple.
 
 ### Phase D — `cista run`
 
+**Closed 2026-07-10:** `cista run name[@version] -- …` resolves the installed
+Rust artifact for the current host, requires a `bin` role, validates the
+artifact path and presence, and passes arguments through. The proof runs after
+the source package has been deleted. See `phase-d-delivery.md`.
+
 - Resolve installed package name[`@version`] → executable entry; verify host
   triple / presence.
 - Arg passthrough: `cista run cat -- file.txt`.
@@ -792,6 +797,11 @@ runnable store entry for the host triple.
 the source tree on disk.
 
 ### Phase E — Meta packages (optional, small)
+
+**Closed 2026-07-10:** minimal meta manifests declare identity plus exact local
+dependency pins. Install validates the complete direct set before writes,
+installs each normal package through the existing pipeline, and snapshots the
+meta identity/pins without stale source paths. See `phase-e-delivery.md`.
 
 - Meta package = **identity + dependency list** (and pins as needed).
 - `cista install` of a meta package installs the dependency set.

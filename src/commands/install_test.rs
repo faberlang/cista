@@ -180,6 +180,91 @@ edition = "2021"
 }
 
 #[test]
+fn install_meta_expands_exact_local_dependencies() {
+    let root = temp_root("meta");
+    let packages = root.join("packages");
+    let binary = packages.join("true");
+    let meta = packages.join("coreutils");
+    let store = root.join("store");
+    fs::create_dir_all(binary.join("interfaces")).expect("create interfaces");
+    fs::create_dir_all(binary.join("rust/src")).expect("create rust source");
+    fs::create_dir_all(&meta).expect("create meta package");
+    fs::write(
+        binary.join("cista.toml"),
+        r#"[source]
+package = "true"
+version = "0.1.0"
+faber_min = "0.38.0"
+kind = "source"
+role = "bin"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+source = "rust"
+crate = "true"
+
+[target.compile]
+emit = "binary"
+crate_type = "bin"
+edition = "2021"
+"#,
+    )
+    .expect("write binary manifest");
+    fs::write(
+        binary.join("rust/Cargo.toml"),
+        r#"[package]
+name = "true"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .expect("write cargo manifest");
+    fs::write(binary.join("rust/src/main.rs"), "fn main() {}\n").expect("write binary source");
+    fs::write(
+        meta.join("cista.toml"),
+        r#"[source]
+package = "coreutils"
+version = "0.1.0"
+role = "meta"
+
+[[dependencies]]
+package = "true"
+version = "0.1.0"
+path = "../true"
+"#,
+    )
+    .expect("write meta manifest");
+
+    run(InstallArgs {
+        path: meta,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        project: None,
+        verify_target_build: false,
+    })
+    .expect("install meta package");
+
+    assert!(store.join("true/0.1.0").is_dir());
+    let installed_meta = store.join("coreutils/0.1.0/cista.toml");
+    assert!(installed_meta.is_file());
+    let parsed = crate::manifest::read_meta_manifest(&installed_meta)
+        .expect("read installed meta")
+        .expect("manifest should be meta");
+    assert_eq!(parsed.dependencies.len(), 1);
+    assert_eq!(parsed.dependencies[0].package, "true");
+    assert!(
+        parsed.dependencies[0].path.is_none(),
+        "installed meta pins must not retain source-relative paths"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn install_real_norma_platform_default_builds_nested_import_without_dependency() {
     let root = temp_root("real-norma-platform-default");
     let store = root.join("store");

@@ -273,6 +273,19 @@ fn validate_store_segment(field: &str, value: &str, diagnostics: &mut Vec<String
     }
 }
 
+pub(super) fn validate_identity(package: &str, version: &str) -> Result<(), Vec<String>> {
+    let mut diagnostics = Vec::new();
+    require_non_empty("source.package", package, &mut diagnostics);
+    require_non_empty("source.version", version, &mut diagnostics);
+    validate_store_segment("source.package", package, &mut diagnostics);
+    validate_store_segment("source.version", version, &mut diagnostics);
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(diagnostics)
+    }
+}
+
 fn require_non_empty(field: &str, value: &str, diagnostics: &mut Vec<String>) {
     if value.trim().is_empty() {
         diagnostics.push(format!("{field} must not be empty"));

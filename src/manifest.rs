@@ -20,6 +20,32 @@ pub struct CistaManifest {
     pub bindings: Vec<Binding>,
 }
 
+/// Minimal manifest for a dependency-set package.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetaManifest {
+    pub source: MetaSourceSection,
+    #[serde(default)]
+    pub dependencies: Vec<MetaDependency>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetaSourceSection {
+    pub package: String,
+    pub version: String,
+    pub role: PackageRole,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetaDependency {
+    pub package: String,
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathBuf>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceSection {
@@ -153,4 +179,23 @@ pub fn read_manifest(path: &Path) -> Result<CistaManifest, String> {
         .map_err(|err| format!("failed to read manifest {}: {err}", path.display()))?;
     toml::from_str(&contents)
         .map_err(|err| format!("failed to parse manifest {}: {err}", path.display()))
+}
+
+/// Read a minimal meta-package manifest when `source.role = "meta"`.
+pub fn read_meta_manifest(path: &Path) -> Result<Option<MetaManifest>, String> {
+    let contents = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read manifest {}: {err}", path.display()))?;
+    let value: toml::Value = toml::from_str(&contents)
+        .map_err(|err| format!("failed to parse manifest {}: {err}", path.display()))?;
+    let is_meta = value
+        .get("source")
+        .and_then(|source| source.get("role"))
+        .and_then(toml::Value::as_str)
+        == Some("meta");
+    if !is_meta {
+        return Ok(None);
+    }
+    toml::from_str(&contents)
+        .map(Some)
+        .map_err(|err| format!("failed to parse meta manifest {}: {err}", path.display()))
 }
