@@ -66,7 +66,7 @@ pub enum CistaCommand {
     Target(TargetCommand),
 
     /// Publish a package to a registry
-    Publish(PackageArg),
+    Publish(PublishArgs),
 
     /// Mark a published package version as yanked
     Yank(YankArg),
@@ -202,7 +202,10 @@ pub struct CheckArgs {
 pub struct InstallArgs {
     /// Local package root containing cista.toml
     #[arg(long)]
-    pub path: PathBuf,
+    pub path: Option<PathBuf>,
+
+    /// Exact registry package identifier (`name@version`) when --path is omitted
+    pub package: Option<String>,
 
     /// Manifest file name or relative path inside the package root
     #[arg(long, default_value = "cista.toml")]
@@ -216,6 +219,10 @@ pub struct InstallArgs {
     #[arg(long)]
     pub store: Option<PathBuf>,
 
+    /// Local/dev registry root; falls back to CISTA_REGISTRY
+    #[arg(long)]
+    pub registry: Option<PathBuf>,
+
     /// Project root containing faber.toml; when set (or when cwd has faber.toml), rewrite faber.lock
     #[arg(long)]
     pub project: Option<PathBuf>,
@@ -223,6 +230,22 @@ pub struct InstallArgs {
     /// Verify the selected target implementation can be built by its native tool before install
     #[arg(long)]
     pub verify_target_build: bool,
+}
+
+/// Local/dev registry publication arguments.
+#[derive(Args, Debug)]
+pub struct PublishArgs {
+    /// Package source root containing cista.toml
+    #[arg(long)]
+    pub path: PathBuf,
+
+    /// Manifest file name or relative path inside the package root
+    #[arg(long, default_value = "cista.toml")]
+    pub manifest: PathBuf,
+
+    /// Local/dev registry root; falls back to CISTA_REGISTRY
+    #[arg(long)]
+    pub registry: Option<PathBuf>,
 }
 
 /// Installed binary execution arguments.
@@ -249,6 +272,10 @@ pub struct PackageArg {
     /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
     #[arg(long)]
     pub store: Option<PathBuf>,
+
+    /// Local/dev registry root; falls back to CISTA_REGISTRY
+    #[arg(long)]
+    pub registry: Option<PathBuf>,
 }
 
 /// Optional package identifier argument.

@@ -63,10 +63,12 @@ entry = "main.fab"
     .expect("write project manifest");
 
     run(InstallArgs {
-        path: package.clone(),
+        path: Some(package.clone()),
+        package: None,
         manifest: PathBuf::from("cista.toml"),
         target_language: "rust".to_owned(),
         store: Some(store.clone()),
+        registry: None,
         project: Some(project.clone()),
         verify_target_build: false,
     })
@@ -151,10 +153,12 @@ edition = "2021"
     fs::write(package.join("rust/src/main.rs"), "fn main() {}\n").expect("write binary source");
 
     run(InstallArgs {
-        path: package,
+        path: Some(package),
+        package: None,
         manifest: PathBuf::from("cista.toml"),
         target_language: "rust".to_owned(),
         store: Some(store.clone()),
+        registry: None,
         project: None,
         verify_target_build: false,
     })
@@ -239,10 +243,12 @@ path = "../true"
     .expect("write meta manifest");
 
     run(InstallArgs {
-        path: meta,
+        path: Some(meta),
+        package: None,
         manifest: PathBuf::from("cista.toml"),
         target_language: "rust".to_owned(),
         store: Some(store.clone()),
+        registry: None,
         project: None,
         verify_target_build: false,
     })
@@ -310,10 +316,12 @@ incipit {
     .expect("write project source");
 
     run(InstallArgs {
-        path: norma.clone(),
+        path: Some(norma.clone()),
+        package: None,
         manifest: PathBuf::from("cista.toml"),
         target_language: "rust".to_owned(),
         store: Some(store.clone()),
+        registry: None,
         project: Some(project.clone()),
         verify_target_build: false,
     })

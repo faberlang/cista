@@ -60,10 +60,12 @@ edition = "2021"
     .expect("write binary source");
 
     super::super::install::run(InstallArgs {
-        path: package.clone(),
+        path: Some(package.clone()),
+        package: None,
         manifest: PathBuf::from("cista.toml"),
         target_language: "rust".to_owned(),
         store: Some(store.clone()),
+        registry: None,
         project: None,
         verify_target_build: false,
     })

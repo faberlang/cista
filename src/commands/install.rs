@@ -6,20 +6,33 @@ use crate::manifest::{
 };
 use crate::project_manifest::{self, PROJECT_MANIFEST};
 
-use super::{env, fs, fs_util, rust_target, shared, CommandResult, Path, PathBuf};
+use super::{env, fs, fs_util, registry, rust_target, shared, CommandResult, Path, PathBuf};
 
 /// Packages that are platform defaults: lock rewrite does not require a
 /// matching `faber.toml` `[dependencies]` entry.
 const PLATFORM_DEFAULT_PACKAGES: &[&str] = &["norma"];
 
 pub fn run(args: InstallArgs) -> CommandResult {
-    let package_root = shared::normalize_path(&args.path);
+    let package_path = match (&args.path, &args.package) {
+        (Some(path), None) => path.clone(),
+        (None, Some(package)) => {
+            registry::fetch_to_cache(package, args.registry.as_deref(), args.store.as_deref())
+                .map_err(|err| vec![err])?
+        }
+        (Some(_), Some(_)) => {
+            return Err(vec![
+                "install accepts either --path or name@version, not both".to_owned(),
+            ])
+        }
+        (None, None) => return Err(vec!["install requires --path or name@version".to_owned()]),
+    };
+    let package_root = shared::normalize_path(&package_path);
     let manifest_path = manifest::manifest_path(&package_root, Some(&args.manifest));
     if let Some(meta) = manifest::read_meta_manifest(&manifest_path).map_err(|err| vec![err])? {
         return install_meta_package(&args, &package_root, &meta);
     }
     let checked = shared::validate_package(
-        &args.path,
+        &package_path,
         &args.manifest,
         Some(&args.target_language),
         args.verify_target_build,

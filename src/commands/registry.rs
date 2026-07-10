@@ -1,0 +1,75 @@
+use crate::manifest;
+use crate::store;
+
+use super::{env, fs_util, shared, Path, PathBuf};
+
+const REGISTRY_ENV: &str = "CISTA_REGISTRY";
+
+pub(super) fn publish(
+    package_path: &Path,
+    manifest_name: &Path,
+    explicit_registry: Option<&Path>,
+) -> Result<PathBuf, String> {
+    let checked = shared::validate_package(package_path, manifest_name, None, false)
+        .map_err(|diagnostics| diagnostics.join("; "))?;
+    let registry = registry_root(explicit_registry)?;
+    let destination = registry
+        .join(&checked.manifest.source.package)
+        .join(&checked.manifest.source.version);
+    if destination.exists() {
+        return Err(format!(
+            "registry package already exists and is immutable: {}",
+            destination.display()
+        ));
+    }
+    fs_util::copy_dir_clean(&checked.package_root, &destination)?;
+    Ok(destination)
+}
+
+pub(super) fn fetch_to_cache(
+    package_id: &str,
+    explicit_registry: Option<&Path>,
+    explicit_store: Option<&Path>,
+) -> Result<PathBuf, String> {
+    let (name, version) = store::split_package_id(package_id);
+    let version = version.ok_or_else(|| {
+        format!("registry package `{package_id}` must use an exact name@version pin")
+    })?;
+    if name.is_empty() || version.is_empty() {
+        return Err(format!(
+            "registry package `{package_id}` must use an exact name@version pin"
+        ));
+    }
+    shared::validate_identity(&name, &version).map_err(|diagnostics| diagnostics.join("; "))?;
+    let registry = registry_root(explicit_registry)?;
+    let source = registry.join(&name).join(&version);
+    let source_manifest = source.join(manifest::MANIFEST_FILE);
+    if !source_manifest.is_file() {
+        return Err(format!(
+            "package `{name}@{version}` is not published in registry {}",
+            registry.display()
+        ));
+    }
+    let store_root = store::store_root(explicit_store)?;
+    let destination = store_root
+        .join(".cache")
+        .join("registry")
+        .join(&name)
+        .join(&version);
+    fs_util::copy_dir_clean(&source, &destination)?;
+    Ok(destination)
+}
+
+fn registry_root(explicit: Option<&Path>) -> Result<PathBuf, String> {
+    let path = explicit
+        .map(Path::to_path_buf)
+        .or_else(|| env::var_os(REGISTRY_ENV).map(PathBuf::from))
+        .ok_or_else(|| {
+            "local registry is not configured; pass --registry or set CISTA_REGISTRY".to_owned()
+        })?;
+    Ok(store::normalize_path(&path))
+}
+
+#[cfg(test)]
+#[path = "registry_test.rs"]
+mod tests;
