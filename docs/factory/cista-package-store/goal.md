@@ -1,8 +1,8 @@
 # Goal: Cista Package Store Model
 
-**Status**: active — Phase A shipped; Phase B closed (foundation + faber consume + real-Norma lock path proof); next: Phase C bins → D run → E meta → F registry
+**Status**: active — Phases A–C closed; next: Phase D run → E meta → F registry
 **Created**: 2026-06-21
-**Updated**: 2026-07-08
+**Updated**: 2026-07-10
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
 **Factory Artifact Dir**: `docs/factory/cista-package-store/`
 **Related**: `phase-a-delivery.md` (shipped), `phase-b-problem.md` (problem lock), `phase-b-delivery.md` (Phase B closed)
@@ -764,6 +764,11 @@ interface paths (not only sibling `FABER_LIBRARY_HOME`), **without** declaring
 deps + lock. Dev sibling fallback still works when packaged Norma is absent.
 
 ### Phase C — Binary packages (coreutils-shaped)
+
+**Closed 2026-07-10:** manifests carry `source.role`; `role = "bin"` builds
+the named Cargo binary and installs it under the host target directory. The
+`examples/coreutils/packages/true` proof installs and executes without its
+source path. See `phase-c-delivery.md`.
 
 - Package role **lib vs bin** in install metadata (manifest field or equivalent).
 - `cista install --path` builds and installs an **executable** into the store

@@ -1,6 +1,6 @@
 use std::process::{Command, Output};
 
-use crate::manifest::CistaManifest;
+use crate::manifest::{CistaManifest, PackageRole};
 
 use super::{Path, PathBuf};
 
@@ -43,19 +43,26 @@ pub(super) fn verify_target_build(
     }
 }
 
-pub(super) fn build_rust_library(
+pub(super) fn build_rust_artifact(
     package_root: &Path,
     manifest: &CistaManifest,
 ) -> Result<PathBuf, String> {
     let (cargo_toml, target_source) = rust_cargo_paths(package_root, manifest)?;
-    run_cargo(&cargo_toml, &["build", "--lib"], "cargo build")?;
-
     let crate_name = manifest
         .target
         .crate_name
         .as_deref()
         .unwrap_or(&manifest.source.package);
-    let artifact_name = format!("lib{}.rlib", crate_name.replace('-', "_"));
+    let (cargo_args, artifact_name) = match manifest.source.role {
+        PackageRole::Lib => (
+            vec!["build", "--lib"],
+            format!("lib{}.rlib", crate_name.replace('-', "_")),
+        ),
+        PackageRole::Bin => (vec!["build", "--bin", crate_name], crate_name.to_owned()),
+        PackageRole::Meta => return Err("meta packages do not build rust artifacts".to_owned()),
+    };
+    run_cargo(&cargo_toml, &cargo_args, "cargo build")?;
+
     let artifact = package_root
         .join(target_source)
         .join("target")

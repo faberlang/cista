@@ -1,0 +1,19 @@
+[source]
+package = "true"
+version = "0.1.0"
+faber_min = "0.38.0"
+kind = "source"
+role = "bin"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+source = "rust"
+crate = "true"
+
+[target.compile]
+emit = "binary"
+crate_type = "bin"
+edition = "2021"

@@ -109,6 +109,77 @@ entry = "main.fab"
 }
 
 #[test]
+fn install_binary_materializes_runnable_host_entry() {
+    let root = temp_root("binary");
+    let package = root.join("true");
+    let store = root.join("store");
+    fs::create_dir_all(package.join("interfaces")).expect("create interfaces");
+    fs::create_dir_all(package.join("rust/src")).expect("create rust source");
+    fs::write(
+        package.join("cista.toml"),
+        r#"[source]
+package = "true"
+version = "0.1.0"
+faber_min = "0.38.0"
+kind = "source"
+role = "bin"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+source = "rust"
+crate = "true"
+
+[target.compile]
+emit = "binary"
+crate_type = "bin"
+edition = "2021"
+"#,
+    )
+    .expect("write cista manifest");
+    fs::write(
+        package.join("rust/Cargo.toml"),
+        r#"[package]
+name = "true"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .expect("write cargo manifest");
+    fs::write(package.join("rust/src/main.rs"), "fn main() {}\n").expect("write binary source");
+
+    run(InstallArgs {
+        path: package,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        project: None,
+        verify_target_build: false,
+    })
+    .expect("install binary");
+
+    let triple = rust_target::rust_host_triple().expect("host triple");
+    let target = store.join("true/0.1.0/targets/rust").join(triple);
+    let executable = target.join("true");
+    assert!(executable.is_file(), "installed executable should exist");
+    assert!(Command::new(&executable)
+        .status()
+        .expect("run installed binary")
+        .success());
+    let installed = crate::manifest::read_manifest(&target.join("cista.toml"))
+        .expect("read installed manifest");
+    assert_eq!(installed.source.role, crate::manifest::PackageRole::Bin);
+    assert_eq!(
+        installed.target.artifact.as_deref(),
+        Some(Path::new("true"))
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn install_real_norma_platform_default_builds_nested_import_without_dependency() {
     let root = temp_root("real-norma-platform-default");
     let store = root.join("store");

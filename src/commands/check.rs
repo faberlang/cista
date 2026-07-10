@@ -11,10 +11,11 @@ pub fn run(args: CheckArgs) -> CommandResult {
     )?;
 
     println!(
-        "ok: {} {} ({}, target {}, binding policy {})",
+        "ok: {} {} ({} {}, target {}, binding policy {})",
         checked.manifest.source.package,
         checked.manifest.source.version,
         checked.manifest.source.kind.kebab_name(),
+        checked.manifest.source.role.kebab_name(),
         checked.manifest.target.language,
         checked.manifest.target.binding_policy.kebab_name()
     );
