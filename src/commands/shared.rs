@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::manifest::{manifest_path, read_manifest, BindingPolicy, CistaManifest, TargetMode};
+use crate::manifest::{
+    manifest_path, read_manifest, BindingPolicy, CistaManifest, SourceKind, TargetMode,
+};
 
 use super::{fs, rust_target, Path, PathBuf};
 
@@ -71,6 +73,18 @@ fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<Strin
     require_non_empty("target.language", &manifest.target.language, diagnostics);
     validate_store_segment("source.package", &manifest.source.package, diagnostics);
     validate_store_segment("source.version", &manifest.source.version, diagnostics);
+
+    let source_kind_matches_target_mode = matches!(
+        (manifest.source.kind, manifest.target.mode),
+        (SourceKind::Source, TargetMode::Compile) | (SourceKind::Artifact, TargetMode::Artifact)
+    );
+    if !source_kind_matches_target_mode {
+        diagnostics.push(format!(
+            "source.kind `{}` is incompatible with target.mode `{}`",
+            manifest.source.kind.kebab_name(),
+            manifest.target.mode.kebab_name()
+        ));
+    }
 
     match manifest.target.mode {
         TargetMode::Compile => {
@@ -285,3 +299,7 @@ fn require_non_empty(field: &str, value: &str, diagnostics: &mut Vec<String>) {
         diagnostics.push(format!("{field} must not be empty"));
     }
 }
+
+#[cfg(test)]
+#[path = "shared_test.rs"]
+mod tests;
