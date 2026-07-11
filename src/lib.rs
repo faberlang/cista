@@ -16,6 +16,3 @@ pub mod resolver;
 pub mod runtime;
 pub mod store;
 pub mod target;
-
-/// Current architectural status of the crate.
-pub const STATUS: &str = "check, install (rlib + interfaces-only), store inspect/remove, faber.lock rewrite; registry staged";
