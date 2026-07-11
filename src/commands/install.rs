@@ -232,8 +232,8 @@ fn install_interfaces_only_target(
     manifest: &CistaManifest,
     package_store_root: &Path,
 ) -> Result<(String, String, PathBuf), String> {
-    let target_triple = rust_target::rust_host_triple().unwrap_or_else(|_| "unknown".to_owned());
-    let rustc_version = rust_target::rustc_version().unwrap_or_else(|_| "unknown".to_owned());
+    let target_triple = rust_target::rust_host_triple()?;
+    let rustc_version = rust_target::rustc_version()?;
     let target_destination = package_store_root
         .join("targets")
         .join(&manifest.target.language)
