@@ -59,7 +59,6 @@ pub(super) fn build_rust_artifact(
             format!("lib{}.rlib", crate_name.replace('-', "_")),
         ),
         PackageRole::Bin => (vec!["build", "--bin", crate_name], crate_name.to_owned()),
-        PackageRole::Meta => return Err("meta packages do not build rust artifacts".to_owned()),
     };
     run_cargo(&cargo_toml, &cargo_args, "cargo build")?;
 
