@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::manifest::{manifest_path, read_manifest, BindingPolicy, CistaManifest, TargetMode};
+use crate::manifest::{
+    manifest_path, read_manifest, BindingPolicy, CistaManifest, SourceKind, TargetMode,
+};
 
 use super::{fs, rust_target, Path, PathBuf};
 
@@ -72,8 +74,32 @@ fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<Strin
     validate_store_segment("source.package", &manifest.source.package, diagnostics);
     validate_store_segment("source.version", &manifest.source.version, diagnostics);
 
+    let source_kind_matches_target_mode = matches!(
+        (manifest.source.kind, manifest.target.mode),
+        (SourceKind::Source, TargetMode::Compile) | (SourceKind::Artifact, TargetMode::Artifact)
+    );
+    if !source_kind_matches_target_mode {
+        diagnostics.push(format!(
+            "source.kind `{}` is incompatible with target.mode `{}`",
+            manifest.source.kind.kebab_name(),
+            manifest.target.mode.kebab_name()
+        ));
+    }
+    if matches!(manifest.source.kind, SourceKind::Artifact) && manifest.source.sources.is_some() {
+        diagnostics.push("source kind `artifact` forbids source.sources".to_owned());
+    }
+
     match manifest.target.mode {
         TargetMode::Compile => {
+            if manifest.target.artifact.is_some() {
+                diagnostics.push("target mode `compile` forbids target.artifact".to_owned());
+            }
+            if manifest.target.triple.is_some() {
+                diagnostics.push("target mode `compile` forbids target.triple".to_owned());
+            }
+            if manifest.target.rustc.is_some() {
+                diagnostics.push("target mode `compile` forbids target.rustc".to_owned());
+            }
             // Pure Faber packages (`binding_policy = generated`) may ship
             // interfaces only — no native target.source / [target.compile].
             // Hand-written native targets still require both fields.
@@ -90,17 +116,34 @@ fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<Strin
             }
         }
         TargetMode::Artifact => {
+            if manifest.target.source.is_some() {
+                diagnostics.push("target mode `artifact` forbids target.source".to_owned());
+            }
+            if manifest.target.compile.is_some() {
+                diagnostics.push("target mode `artifact` forbids [target.compile]".to_owned());
+            }
             if manifest.target.artifact.is_none() {
                 diagnostics.push("target mode `artifact` requires target.artifact".to_owned());
+            }
+            if manifest.target.triple.is_none() {
+                diagnostics.push("target mode `artifact` requires target.triple".to_owned());
+            }
+            if manifest.target.rustc.is_none() {
+                diagnostics.push("target mode `artifact` requires target.rustc".to_owned());
             }
         }
     }
 
-    if matches!(manifest.target.binding_policy, BindingPolicy::Manifest)
-        && manifest.bindings.is_empty()
-    {
-        diagnostics
-            .push("binding policy `manifest` requires at least one [[bindings]] row".to_owned());
+    match manifest.target.binding_policy {
+        BindingPolicy::Generated if !manifest.bindings.is_empty() => {
+            diagnostics.push("binding policy `generated` forbids [[bindings]] rows".to_owned());
+        }
+        BindingPolicy::Manifest if manifest.bindings.is_empty() => {
+            diagnostics.push(
+                "binding policy `manifest` requires at least one [[bindings]] row".to_owned(),
+            );
+        }
+        BindingPolicy::Generated | BindingPolicy::Manifest => {}
     }
 
     for (index, binding) in manifest.bindings.iter().enumerate() {
@@ -285,3 +328,7 @@ fn require_non_empty(field: &str, value: &str, diagnostics: &mut Vec<String>) {
         diagnostics.push(format!("{field} must not be empty"));
     }
 }
+
+#[cfg(test)]
+#[path = "shared_test.rs"]
+mod tests;

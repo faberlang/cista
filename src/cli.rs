@@ -222,10 +222,11 @@ pub struct CheckArgs {
 #[derive(Args, Debug)]
 pub struct InstallArgs {
     /// Local package root containing cista.toml
-    #[arg(long)]
+    #[arg(long, required_unless_present = "package", conflicts_with = "package")]
     pub path: Option<PathBuf>,
 
     /// Exact registry package identifier (`name@version`) when --path is omitted
+    #[arg(required_unless_present = "path", conflicts_with = "path")]
     pub package: Option<String>,
 
     /// Manifest file name or relative path inside the package root
@@ -360,3 +361,7 @@ pub struct YankArg {
     /// Package version to yank
     pub version: String,
 }
+
+#[cfg(test)]
+#[path = "cli_test.rs"]
+mod tests;

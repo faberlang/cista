@@ -5,9 +5,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const LOCK_FILE: &str = "faber.lock";
+static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -58,7 +61,48 @@ pub fn write_lock(path: &Path, lock: &FaberLock) -> Result<(), String> {
         fs::create_dir_all(parent)
             .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
     }
-    fs::write(path, contents).map_err(|err| format!("failed to write {}: {err}", path.display()))
+    let temporary_path = temporary_lock_path(path);
+    write_and_replace(path, &temporary_path, contents.as_bytes())
+}
+
+fn temporary_lock_path(path: &Path) -> PathBuf {
+    let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .map_or_else(|| LOCK_FILE.into(), |name| name.to_os_string());
+    let mut temporary_name = file_name;
+    temporary_name.push(format!(".{}.{}.tmp", std::process::id(), sequence));
+    path.with_file_name(temporary_name)
+}
+
+fn write_and_replace(path: &Path, temporary_path: &Path, contents: &[u8]) -> Result<(), String> {
+    let mut temporary = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temporary_path)
+        .map_err(|err| format!("failed to create {}: {err}", temporary_path.display()))?;
+    let write_result = temporary
+        .write_all(contents)
+        .and_then(|()| temporary.sync_all())
+        .map_err(|err| format!("failed to write {}: {err}", temporary_path.display()));
+    drop(temporary);
+    let result = write_result.and_then(|()| {
+        fs::rename(temporary_path, path)
+            .map_err(|err| format!("failed to replace {}: {err}", path.display()))
+    });
+    match result {
+        Ok(()) => Ok(()),
+        Err(operation_error) => match fs::remove_file(temporary_path) {
+            Ok(()) => Err(operation_error),
+            Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {
+                Err(operation_error)
+            }
+            Err(cleanup_error) => Err(format!(
+                "{operation_error}; failed to remove {}: {cleanup_error}",
+                temporary_path.display()
+            )),
+        },
+    }
 }
 
 /// Upsert one package record by name (exact version replace).
@@ -134,3 +178,7 @@ pub fn locked_from_install(input: InstalledLockInput<'_>) -> LockedPackage {
 pub fn lock_path(project_root: &Path) -> PathBuf {
     project_root.join(LOCK_FILE)
 }
+
+#[cfg(test)]
+#[path = "faber_lock_test.rs"]
+mod tests;

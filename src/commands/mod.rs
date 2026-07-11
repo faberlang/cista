@@ -42,9 +42,9 @@ pub(crate) fn validate_package_identity(package: &str, version: &str) -> Result<
     shared::validate_identity(package, version)
 }
 
-/// Run a parsed `cista` command.
-pub fn run(cli: CistaCli) {
-    let result = match cli.command {
+/// Run a parsed `cista` command and return any diagnostics to the caller.
+pub fn run(cli: CistaCli) -> CommandResult {
+    match cli.command {
         CistaCommand::Init(args) => init::run(args),
         CistaCommand::Check(args) => check::run(args),
         CistaCommand::Inspect(args) => inspect::run(args),
@@ -65,12 +65,5 @@ pub fn run(cli: CistaCli) {
         CistaCommand::Login(args) => login::run(args),
         CistaCommand::Logout(args) => logout::run(args),
         CistaCommand::Doctor => doctor::run(),
-    };
-
-    if let Err(diagnostics) = result {
-        for diagnostic in diagnostics {
-            eprintln!("error: {diagnostic}");
-        }
-        std::process::exit(1);
     }
 }

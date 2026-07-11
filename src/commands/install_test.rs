@@ -101,6 +101,8 @@ entry = "main.fab"
     let installed_manifest = crate::manifest::read_manifest(&PathBuf::from(&norma.target_manifest))
         .expect("read installed target manifest");
     assert!(installed_manifest.target.artifact.is_none());
+    assert!(installed_manifest.target.triple.is_none());
+    assert!(installed_manifest.target.rustc.is_none());
     assert!(installed_manifest.bindings.is_empty());
     assert_eq!(
         installed_manifest.target.binding_policy,

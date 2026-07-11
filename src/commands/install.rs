@@ -146,27 +146,37 @@ fn install_checked_package(
     let manifest = &checked.manifest;
     ensure_rust_source_install(manifest)?;
 
+    let interfaces_only = is_interfaces_only_package(manifest);
+    let target_triple = rust_target::rust_host_triple().map_err(|err| vec![err])?;
+    let rustc_version = rust_target::rustc_version().map_err(|err| vec![err])?;
+    let artifact = if interfaces_only {
+        None
+    } else {
+        Some(
+            rust_target::build_rust_artifact(&checked.package_root, manifest)
+                .map_err(|err| vec![err])?,
+        )
+    };
+
     let package_store_root = shared::package_store_root(store_root, manifest);
     install_interfaces(&checked.package_root, manifest, &package_store_root)
         .map_err(|err| vec![err])?;
 
-    let interfaces_only = is_interfaces_only_package(manifest);
-    let (target_triple, rustc_version, artifact_name) = if interfaces_only {
-        install_interfaces_only_target(manifest, &package_store_root).map_err(|err| vec![err])?
+    let artifact_name = if interfaces_only {
+        install_interfaces_only_target(manifest, &package_store_root, &target_triple)
+            .map_err(|err| vec![err])?
     } else {
-        let target_triple = rust_target::rust_host_triple().map_err(|err| vec![err])?;
-        let rustc_version = rust_target::rustc_version().map_err(|err| vec![err])?;
-        let artifact = rust_target::build_rust_artifact(&checked.package_root, manifest)
-            .map_err(|err| vec![err])?;
-        let artifact_name = install_built_rust_target(
+        let artifact = artifact.as_deref().ok_or_else(|| {
+            vec!["internal error: compiled package has no built artifact".to_owned()]
+        })?;
+        install_built_rust_target(
             manifest,
-            &artifact,
+            artifact,
             &package_store_root,
             &target_triple,
             &rustc_version,
         )
-        .map_err(|err| vec![err])?;
-        (target_triple, rustc_version, artifact_name)
+        .map_err(|err| vec![err])?
     };
 
     println!(
@@ -231,13 +241,12 @@ fn install_interfaces(
 fn install_interfaces_only_target(
     manifest: &CistaManifest,
     package_store_root: &Path,
-) -> Result<(String, String, PathBuf), String> {
-    let target_triple = rust_target::rust_host_triple().unwrap_or_else(|_| "unknown".to_owned());
-    let rustc_version = rust_target::rustc_version().unwrap_or_else(|_| "unknown".to_owned());
+    target_triple: &str,
+) -> Result<PathBuf, String> {
     let target_destination = package_store_root
         .join("targets")
         .join(&manifest.target.language)
-        .join(&target_triple);
+        .join(target_triple);
     fs_util::replace_directory(&target_destination)?;
 
     let installed = CistaManifest {
@@ -257,8 +266,8 @@ fn install_interfaces_only_target(
             source: None,
             artifact: None,
             crate_name: manifest.target.crate_name.clone(),
-            triple: Some(target_triple.clone()),
-            rustc: Some(rustc_version.clone()),
+            triple: None,
+            rustc: None,
             flags: manifest.target.flags.clone(),
             compile: manifest.target.compile.clone(),
         },
@@ -273,7 +282,7 @@ fn install_interfaces_only_target(
             installed_manifest_path.display()
         )
     })?;
-    Ok((target_triple, rustc_version, PathBuf::new()))
+    Ok(PathBuf::new())
 }
 
 fn install_built_rust_target(

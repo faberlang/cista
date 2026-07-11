@@ -56,7 +56,11 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
             )
         })?;
         let package_path = package_entry.path();
-        if !package_path.is_dir() {
+        if !package_entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect {}: {err}", package_path.display()))?
+            .is_dir()
+        {
             continue;
         }
         let Some(name) = package_path
@@ -80,7 +84,11 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
                 )
             })?;
             let version_path = version_entry.path();
-            if !version_path.is_dir() {
+            if !version_entry
+                .file_type()
+                .map_err(|err| format!("failed to inspect {}: {err}", version_path.display()))?
+                .is_dir()
+            {
                 continue;
             }
             let Some(version) = version_path
@@ -165,9 +173,18 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
         let entry =
             entry.map_err(|err| format!("failed to read entry under {}: {err}", dir.display()))?;
         let path = entry.path();
-        if path.is_dir() {
+        let file_type = entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
+        if file_type.is_symlink() {
+            return Err(format!(
+                "installed package contains unsupported symlink {}",
+                path.display()
+            ));
+        }
+        if file_type.is_dir() {
             collect_files(root, &path, out)?;
-        } else if path.is_file() {
+        } else if file_type.is_file() {
             if let Ok(relative) = path.strip_prefix(root) {
                 out.push(relative.to_path_buf());
             }
@@ -177,29 +194,52 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
 }
 
 /// Read the first available target-level installed `cista.toml` if present.
-pub fn read_any_target_manifest(package: &InstalledPackage) -> Option<(PathBuf, CistaManifest)> {
+pub fn read_any_target_manifest(
+    package: &InstalledPackage,
+) -> Result<Option<(PathBuf, CistaManifest)>, String> {
     let targets = &package.targets_dir;
-    if !targets.is_dir() {
-        return None;
+    match fs::symlink_metadata(targets) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(format!(
+                "installed package contains unsupported symlink {}",
+                targets.display()
+            ));
+        }
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(None),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("failed to inspect {}: {err}", targets.display())),
     }
     walk_for_manifest(targets)
 }
 
-fn walk_for_manifest(dir: &Path) -> Option<(PathBuf, CistaManifest)> {
-    let entries = fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
+fn walk_for_manifest(dir: &Path) -> Result<Option<(PathBuf, CistaManifest)>, String> {
+    let mut entries = fs::read_dir(dir)
+        .map_err(|err| format!("failed to read {}: {err}", dir.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| format!("failed to read entry under {}: {err}", dir.display()))?;
+    entries.sort_by_key(|entry| entry.file_name());
+
+    for entry in entries {
         let path = entry.path();
-        if path.is_dir() {
-            if let Some(found) = walk_for_manifest(&path) {
-                return Some(found);
+        let file_type = entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
+        if file_type.is_symlink() {
+            return Err(format!(
+                "installed package contains unsupported symlink {}",
+                path.display()
+            ));
+        }
+        if file_type.is_dir() {
+            if let Some(found) = walk_for_manifest(&path)? {
+                return Ok(Some(found));
             }
         } else if path.file_name().and_then(|n| n.to_str()) == Some(MANIFEST_FILE) {
-            if let Ok(manifest) = read_manifest(&path) {
-                return Some((path, manifest));
-            }
+            return read_manifest(&path).map(|manifest| Some((path, manifest)));
         }
     }
-    None
+    Ok(None)
 }
 
 /// Resolve a package id or filesystem path for inspect.
@@ -222,3 +262,7 @@ pub enum ResolvedInspectTarget {
     Path(PathBuf),
     Installed(InstalledPackage),
 }
+
+#[cfg(test)]
+#[path = "store_test.rs"]
+mod tests;

@@ -2,6 +2,7 @@ use crate::cli::PackageArg;
 use crate::store;
 
 use super::{fs, CommandResult};
+use std::io::ErrorKind;
 
 pub fn run(args: PackageArg) -> CommandResult {
     let store_root = store::store_root(args.store.as_deref()).map_err(|err| vec![err])?;
@@ -13,15 +14,8 @@ pub fn run(args: PackageArg) -> CommandResult {
         )]
     })?;
 
-    // Drop empty package name directory when no versions remain.
     if let Some(name_dir) = package.package_root.parent() {
-        if name_dir
-            .read_dir()
-            .map(|mut entries| entries.next().is_none())
-            .unwrap_or(false)
-        {
-            let _ = fs::remove_dir(name_dir);
-        }
+        remove_empty_name_dir(name_dir).map_err(|err| vec![err])?;
     }
 
     println!(
@@ -32,3 +26,35 @@ pub fn run(args: PackageArg) -> CommandResult {
     );
     Ok(())
 }
+
+fn remove_empty_name_dir(name_dir: &std::path::Path) -> Result<(), String> {
+    let mut entries = name_dir.read_dir().map_err(|error| {
+        format!(
+            "failed to inspect package directory {} after removal: {error}",
+            name_dir.display()
+        )
+    })?;
+    if entries.next().is_some() {
+        return Ok(());
+    }
+
+    match fs::remove_dir(name_dir) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::NotFound | ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(format!(
+            "failed to remove empty package directory {}: {error}",
+            name_dir.display()
+        )),
+    }
+}
+
+#[cfg(test)]
+#[path = "remove_test.rs"]
+mod tests;

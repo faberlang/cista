@@ -62,7 +62,10 @@ fn parse_dependencies_loose(contents: &str, path: &Path) -> Result<ProjectManife
         .ok_or_else(|| format!("{} package.name is required", path.display()))?
         .to_owned();
     let mut dependencies = BTreeMap::new();
-    if let Some(deps) = table.get("dependencies").and_then(|v| v.as_table()) {
+    if let Some(dependencies_value) = table.get("dependencies") {
+        let deps = dependencies_value
+            .as_table()
+            .ok_or_else(|| format!("{} [dependencies] must be a table", path.display()))?;
         for (key, val) in deps {
             let version = match val {
                 toml::Value::String(s) => s.clone(),
@@ -115,3 +118,7 @@ pub fn require_exact_dependency(
         )),
     }
 }
+
+#[cfg(test)]
+#[path = "project_manifest_test.rs"]
+mod tests;

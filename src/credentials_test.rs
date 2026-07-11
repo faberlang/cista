@@ -50,3 +50,19 @@ fn credential_file_is_owner_only() {
     assert!(token(&path, "https://cista.dev").is_err());
     fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn failed_replacement_removes_temporary_credentials() {
+    let directory = temp_path();
+    let destination = directory.join("destination");
+    let temporary = directory.join("credentials.tmp");
+    fs::create_dir_all(&destination).unwrap();
+
+    let error = write_and_replace(&destination, &temporary, b"secret")
+        .expect_err("replacing a directory must fail");
+
+    assert!(error.contains("failed to replace credentials"));
+    assert!(!temporary.exists());
+    assert!(destination.is_dir());
+    fs::remove_dir_all(directory).unwrap();
+}

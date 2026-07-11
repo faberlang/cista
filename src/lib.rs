@@ -4,11 +4,9 @@
 //! CLI should call into this crate, while the `cista` binary exposes low-level
 //! inspection and maintenance commands for package plumbing.
 
-pub mod cache;
 pub mod cli;
 pub mod commands;
 pub mod credentials;
-pub mod diagnostics;
 pub mod faber_lock;
 pub mod manifest;
 pub mod package;
@@ -18,6 +16,3 @@ pub mod resolver;
 pub mod runtime;
 pub mod store;
 pub mod target;
-
-/// Current architectural status of the crate.
-pub const STATUS: &str = "check, install (rlib + interfaces-only), store inspect/remove, faber.lock rewrite; registry staged";

@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct CredentialFile {
@@ -128,23 +131,54 @@ fn write(path: &Path, credentials: &CredentialFile) -> Result<(), String> {
     })?;
     let contents = toml::to_string(credentials)
         .map_err(|error| format!("failed to encode registry credentials: {error}"))?;
-    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-    let mut file = secure_create(&temporary)?;
-    file.write_all(contents.as_bytes())
+    let temporary = temporary_path(path);
+    write_and_replace(path, &temporary, contents.as_bytes())
+}
+
+fn temporary_path(path: &Path) -> PathBuf {
+    let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    path.with_extension(format!("tmp-{}-{sequence}", std::process::id()))
+}
+
+fn write_and_replace(path: &Path, temporary: &Path, contents: &[u8]) -> Result<(), String> {
+    let mut file = secure_create(temporary)?;
+    let write_result = file
+        .write_all(contents)
         .and_then(|_| file.sync_all())
         .map_err(|error| {
             format!(
                 "failed to write credentials {}: {error}",
                 temporary.display()
             )
-        })?;
-    fs::rename(&temporary, path).map_err(|error| {
-        format!(
-            "failed to replace credentials {} with {}: {error}",
-            path.display(),
-            temporary.display()
-        )
-    })
+        });
+    drop(file);
+    let result = write_result.and_then(|_| {
+        fs::rename(temporary, path).map_err(|error| {
+            format!(
+                "failed to replace credentials {} with {}: {error}",
+                path.display(),
+                temporary.display()
+            )
+        })
+    });
+    match result {
+        Ok(()) => Ok(()),
+        Err(operation_error) => match remove_temporary(temporary) {
+            Ok(()) => Err(operation_error),
+            Err(cleanup_error) => Err(format!("{operation_error}; {cleanup_error}")),
+        },
+    }
+}
+
+fn remove_temporary(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "failed to remove temporary credentials {}: {error}",
+            path.display()
+        )),
+    }
 }
 
 #[cfg(unix)]
