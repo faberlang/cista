@@ -160,6 +160,16 @@ pub fn split_package_id(package_id: &str) -> (String, Option<String>) {
 
 /// Collect files under an installed package root (relative paths).
 pub fn list_package_files(package_root: &Path) -> Result<Vec<PathBuf>, String> {
+    if fs::symlink_metadata(package_root)
+        .map_err(|err| format!("failed to inspect {}: {err}", package_root.display()))?
+        .file_type()
+        .is_symlink()
+    {
+        return Err(format!(
+            "installed package contains unsupported symlink {}",
+            package_root.display()
+        ));
+    }
     let mut files = Vec::new();
     collect_files(package_root, package_root, &mut files)?;
     files.sort();

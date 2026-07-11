@@ -42,6 +42,23 @@ fn package_file_listing_rejects_symlinks() {
 
 #[cfg(unix)]
 #[test]
+fn package_file_listing_rejects_symlink_root() {
+    use std::os::unix::fs::symlink;
+
+    let root = temporary_dir("symlink-root");
+    let target = root.join("package");
+    fs::create_dir_all(&target).expect("package directory should be created");
+    let package_root = root.join("package-link");
+    symlink(&target, &package_root).expect("package symlink should be created");
+
+    let error = list_package_files(&package_root).expect_err("symlink root should fail closed");
+
+    assert!(error.contains("unsupported symlink"), "{error}");
+    fs::remove_dir_all(root).expect("temporary directory should be removed");
+}
+
+#[cfg(unix)]
+#[test]
 fn package_file_listing_rejects_special_entries() {
     use std::os::unix::net::UnixListener;
 
