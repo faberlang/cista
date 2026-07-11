@@ -158,6 +158,44 @@ fn local_registry_package_symlink_cannot_escape_registry() {
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
 
+#[cfg(unix)]
+#[test]
+fn local_registry_publish_cannot_follow_package_symlink_outside_registry() {
+    use std::os::unix::fs::symlink;
+
+    let root = temp_root().join("registry-publish-symlink");
+    let source = root.join("source");
+    let registry = root.join("registry");
+    let external = root.join("external");
+    fs::create_dir_all(source.join("interfaces")).expect("create source interfaces");
+    fs::create_dir_all(&registry).expect("create registry");
+    fs::create_dir_all(&external).expect("create external directory");
+    fs::write(
+        source.join("cista.toml"),
+        r#"[source]
+package = "tool"
+version = "1.2.3"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#,
+    )
+    .expect("write package manifest");
+    symlink(&external, registry.join("tool")).expect("link escaped package name");
+
+    let error = publish(&source, Path::new("cista.toml"), Some(&registry))
+        .expect_err("escaped registry destination should fail closed");
+
+    assert!(error.contains("resolves outside registry"));
+    assert!(!external.join("1.2.3").exists());
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
 #[test]
 fn cli_routes_remote_registry_without_accepting_local_registry_too() {
     let cli = CistaCli::try_parse_from([
