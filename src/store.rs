@@ -235,8 +235,15 @@ fn walk_for_manifest(dir: &Path) -> Result<Option<(PathBuf, CistaManifest)>, Str
             if let Some(found) = walk_for_manifest(&path)? {
                 return Ok(Some(found));
             }
-        } else if path.file_name().and_then(|n| n.to_str()) == Some(MANIFEST_FILE) {
+        } else if file_type.is_file()
+            && path.file_name().and_then(|n| n.to_str()) == Some(MANIFEST_FILE)
+        {
             return read_manifest(&path).map(|manifest| Some((path, manifest)));
+        } else if !file_type.is_file() {
+            return Err(format!(
+                "installed package contains unsupported entry {}",
+                path.display()
+            ));
         }
     }
     Ok(None)
