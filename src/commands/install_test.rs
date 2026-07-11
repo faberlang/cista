@@ -271,6 +271,35 @@ path = "../true"
 }
 
 #[test]
+fn ordinary_manifest_rejects_meta_role() {
+    let root = temp_root("ordinary-meta-role");
+    let manifest_path = root.join("cista.toml");
+    fs::write(
+        &manifest_path,
+        r#"[source]
+package = "not-meta"
+version = "0.1.0"
+faber_min = "0.38.0"
+kind = "source"
+role = "meta"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#,
+    )
+    .expect("write invalid ordinary manifest");
+
+    let error = crate::manifest::read_manifest(&manifest_path)
+        .expect_err("ordinary schema must reject the meta role");
+    assert!(error.contains("unknown variant `meta`"), "{error}");
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn install_real_norma_platform_default_builds_nested_import_without_dependency() {
     let root = temp_root("real-norma-platform-default");
     let store = root.join("store");

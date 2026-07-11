@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::manifest::{
-    manifest_path, read_manifest, BindingPolicy, CistaManifest, PackageRole, TargetMode,
-};
+use crate::manifest::{manifest_path, read_manifest, BindingPolicy, CistaManifest, TargetMode};
 
 use super::{fs, rust_target, Path, PathBuf};
 
@@ -73,10 +71,6 @@ fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<Strin
     require_non_empty("target.language", &manifest.target.language, diagnostics);
     validate_store_segment("source.package", &manifest.source.package, diagnostics);
     validate_store_segment("source.version", &manifest.source.version, diagnostics);
-
-    if matches!(manifest.source.role, PackageRole::Meta) {
-        diagnostics.push("package role `meta` is reserved for Phase E".to_owned());
-    }
 
     match manifest.target.mode {
         TargetMode::Compile => {

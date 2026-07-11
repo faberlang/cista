@@ -1,8 +1,8 @@
 use crate::cli::InstallArgs;
 use crate::faber_lock::{self, locked_from_install, InstalledLockInput};
 use crate::manifest::{
-    self, BindingPolicy, CistaManifest, MetaManifest, PackageRole, SourceKind, SourceSection,
-    TargetFlags, TargetMode, TargetSection,
+    self, BindingPolicy, CistaManifest, MetaManifest, SourceKind, SourceSection, TargetFlags,
+    TargetMode, TargetSection,
 };
 use crate::project_manifest::{self, PROJECT_MANIFEST};
 
@@ -52,11 +52,6 @@ fn install_meta_package(
     package_root: &Path,
     meta: &MetaManifest,
 ) -> CommandResult {
-    if !matches!(meta.source.role, PackageRole::Meta) {
-        return Err(vec![
-            "meta manifest requires source.role = `meta`".to_owned()
-        ]);
-    }
     shared::validate_identity(&meta.source.package, &meta.source.version)?;
     if meta.dependencies.is_empty() {
         return Err(vec![

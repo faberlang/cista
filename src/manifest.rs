@@ -1,9 +1,9 @@
-//! Manifest model for installed and source-distributed cista packages.
+//! Manifest models for installed and source-distributed cista packages.
 //!
-//! The first schema is intentionally narrow. It models the current
-//! package-management experiment rather than trying to accept every future
-//! registry shape: one Faber-facing `[source]`, one selected `[target]`, and
-//! optional structured `[[bindings]]` rows for manifest-bound target symbols.
+//! `CistaManifest` describes buildable library and binary packages.
+//! `MetaManifest` is a separate dependency-set schema: it has no target,
+//! interfaces, sources, or bindings. The schemas share file naming and package
+//! identity conventions, but their roles are deliberately disjoint.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -34,7 +34,7 @@ pub struct MetaManifest {
 pub struct MetaSourceSection {
     pub package: String,
     pub version: String,
-    pub role: PackageRole,
+    pub role: MetaPackageRole,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -65,7 +65,6 @@ pub enum PackageRole {
     #[default]
     Lib,
     Bin,
-    Meta,
 }
 
 impl PackageRole {
@@ -74,9 +73,14 @@ impl PackageRole {
         match self {
             Self::Lib => "lib",
             Self::Bin => "bin",
-            Self::Meta => "meta",
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MetaPackageRole {
+    Meta,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
