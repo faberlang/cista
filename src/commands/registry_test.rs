@@ -278,3 +278,39 @@ edition = "2021"
 
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
+
+#[test]
+fn publish_preserves_existing_empty_package_version() {
+    let root = temp_root().join("immutable-empty-package");
+    let source = root.join("source");
+    let registry = root.join("registry");
+    let destination = registry.join("tool/1.2.3");
+    fs::create_dir_all(source.join("interfaces")).expect("create source interfaces");
+    fs::create_dir_all(&destination).expect("reserve package version");
+    fs::write(
+        source.join("cista.toml"),
+        r#"[source]
+package = "tool"
+version = "1.2.3"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#,
+    )
+    .expect("write package manifest");
+
+    let error = publish(&source, Path::new("cista.toml"), Some(&registry))
+        .expect_err("reserved package version should remain immutable");
+
+    assert!(error.contains("already exists and is immutable"));
+    assert!(fs::read_dir(&destination)
+        .expect("read reserved package version")
+        .next()
+        .is_none());
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
