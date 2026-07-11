@@ -4,7 +4,6 @@
 //! CLI should call into this crate, while the `cista` binary exposes low-level
 //! inspection and maintenance commands for package plumbing.
 
-pub mod cache;
 pub mod cli;
 pub mod commands;
 pub mod credentials;
