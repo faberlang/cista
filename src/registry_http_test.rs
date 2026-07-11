@@ -1,7 +1,36 @@
 use super::*;
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::thread;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+#[derive(Clone, Default)]
+struct HermeticRegistry {
+    archives: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+}
+
+impl Transport for HermeticRegistry {
+    fn execute(&self, request: Request) -> Result<Vec<u8>, String> {
+        if request.authorization.as_deref() != Some("Bearer secret") {
+            return Err("registry request failed: 401 Unauthorized".to_owned());
+        }
+        let mut archives = self
+            .archives
+            .lock()
+            .map_err(|_| "hermetic registry lock poisoned".to_owned())?;
+        match request.method {
+            Method::Put => {
+                if archives.contains_key(&request.url) {
+                    return Err("registry request failed: 409 Conflict".to_owned());
+                }
+                archives.insert(request.url, request.body);
+                Ok(Vec::new())
+            }
+            Method::Get => archives
+                .get(&request.url)
+                .cloned()
+                .ok_or_else(|| "registry request failed: 404 Not Found".to_owned()),
+        }
+    }
+}
 
 #[test]
 fn rejects_credentials_over_plain_http() {
@@ -11,39 +40,50 @@ fn rejects_credentials_over_plain_http() {
 }
 
 #[test]
-fn sends_anonymous_get_and_reads_success_body() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test registry");
-    let address = listener.local_addr().expect("registry address");
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept request");
-        let mut request = [0; 1024];
-        let count = stream.read(&mut request).expect("read request");
-        let request = String::from_utf8_lossy(&request[..count]);
-        assert!(request.starts_with("GET /v1/packages/tool/1.2.3 HTTP/1.1"));
-        assert!(!request.contains("Authorization:"));
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\npayload")
-            .expect("write response");
-    });
-    let client = RegistryHttpClient::new(&format!("http://{address}"), None)
-        .expect("anonymous local client");
-    assert_eq!(client.get("/v1/packages/tool/1.2.3").unwrap(), b"payload");
-    server.join().expect("server thread");
+fn authenticated_publish_fetch_round_trip_is_immutable() {
+    let registry = HermeticRegistry::default();
+    let client =
+        RegistryHttpClient::with_transport("https://cista.dev", Some("secret"), Box::new(registry))
+            .expect("authenticated registry client");
+    let archive = b"cista package archive".to_vec();
+
+    client
+        .publish_package("tool", "1.2.3", archive.clone())
+        .expect("publish archive");
+    assert_eq!(client.fetch_package("tool", "1.2.3").unwrap(), archive);
+    assert!(client
+        .publish_package("tool", "1.2.3", Vec::new())
+        .unwrap_err()
+        .contains("409"));
 }
 
 #[test]
-fn rejects_non_success_response() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test registry");
-    let address = listener.local_addr().expect("registry address");
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept request");
-        let mut request = [0; 512];
-        let _request_len = stream.read(&mut request).expect("read request");
-        stream
-            .write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n")
-            .expect("write response");
-    });
-    let client = RegistryHttpClient::new(&format!("http://{address}"), None).unwrap();
-    assert!(client.get("/v1/private").unwrap_err().contains("401"));
-    server.join().expect("server thread");
+fn missing_or_wrong_auth_fails_closed() {
+    let registry = HermeticRegistry::default();
+    let anonymous =
+        RegistryHttpClient::with_transport("https://cista.dev", None, Box::new(registry.clone()))
+            .unwrap();
+    let wrong =
+        RegistryHttpClient::with_transport("https://cista.dev", Some("wrong"), Box::new(registry))
+            .unwrap();
+
+    assert!(anonymous
+        .fetch_package("tool", "1.2.3")
+        .unwrap_err()
+        .contains("401"));
+    assert!(wrong
+        .fetch_package("tool", "1.2.3")
+        .unwrap_err()
+        .contains("401"));
+}
+
+#[test]
+fn package_identity_cannot_escape_api_path() {
+    let client = RegistryHttpClient::with_transport(
+        "https://cista.dev",
+        Some("secret"),
+        Box::new(HermeticRegistry::default()),
+    )
+    .unwrap();
+    assert!(client.fetch_package("../tool", "1.2.3").is_err());
 }

@@ -834,12 +834,19 @@ optional bearer authentication, strict success-status handling, and local
 loopback contract tests. Credentials fail closed over plain HTTP. Live
 `cista.dev` validation remains environment-gated and is not claimed here.
 
+**Authenticated round-trip slice closed 2026-07-10:** exact package archive
+PUT/GET requests now share the HTTPS transport and canonical package identity
+validation. A hermetic registry proves bearer authorization, immutable publish,
+fetch, unauthorized rejection, and path-escape rejection without weakening the
+plain-HTTP credential prohibition. This is client-contract evidence, not a live
+cista.dev product run.
+
 - Remote API paths are origin-relative and must begin with exactly one `/`.
 - Authenticated requests use `Authorization: Bearer <token>` only over HTTPS.
 - Transport errors and non-success responses are terminal; remote operations
   must not silently fall back to the local filesystem registry.
-- Package archive endpoints and credential persistence remain later Phase G
-  slices after the server contract is fixed.
+- Credential persistence and CLI routing remain later Phase G slices after the
+  server contract is fixed.
 
 **Exit:** a CLI fetch/publish operation can use the authenticated remote
 transport against the fixed cista.dev API without weakening local/dev behavior.
