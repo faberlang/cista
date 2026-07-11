@@ -27,7 +27,8 @@ pub fn run(args: InstallArgs) -> CommandResult {
         (None, None) => return Err(vec!["install requires --path or name@version".to_owned()]),
     };
     let package_root = shared::normalize_path(&package_path);
-    let manifest_path = manifest::manifest_path(&package_root, Some(&args.manifest));
+    let manifest_path = shared::package_manifest_path(&package_root, &args.manifest)
+        .map_err(|error| vec![error])?;
     if let Some(meta) = manifest::read_meta_manifest(&manifest_path).map_err(|err| vec![err])? {
         return install_meta_package(&args, &package_root, &meta);
     }
@@ -153,14 +154,25 @@ fn install_checked_package(
         None
     } else {
         Some(
-            rust_target::build_rust_artifact(&checked.package_root, manifest)
-                .map_err(|err| vec![err])?,
+            rust_target::build_rust_artifact(
+                checked
+                    .paths
+                    .target_source
+                    .as_deref()
+                    .ok_or_else(|| vec!["rust target requires target.source".to_owned()])?,
+                manifest,
+            )
+            .map_err(|err| vec![err])?,
         )
     };
 
     let package_store_root = shared::package_store_root(store_root, manifest);
-    install_interfaces(&checked.package_root, manifest, &package_store_root)
-        .map_err(|err| vec![err])?;
+    let interface_source = checked
+        .paths
+        .interfaces
+        .as_deref()
+        .ok_or_else(|| vec!["source.interfaces path was not resolved".to_owned()])?;
+    install_interfaces(interface_source, &package_store_root).map_err(|err| vec![err])?;
 
     let artifact_name = if interfaces_only {
         install_interfaces_only_target(manifest, &package_store_root, &target_triple)
@@ -227,14 +239,9 @@ fn ensure_rust_source_install(manifest: &CistaManifest) -> CommandResult {
     Ok(())
 }
 
-fn install_interfaces(
-    package_root: &Path,
-    manifest: &CistaManifest,
-    package_store_root: &Path,
-) -> Result<(), String> {
-    let interface_source = package_root.join(&manifest.source.interfaces);
+fn install_interfaces(interface_source: &Path, package_store_root: &Path) -> Result<(), String> {
     let interface_destination = package_store_root.join("interfaces");
-    fs_util::copy_dir_clean(&interface_source, &interface_destination)
+    fs_util::copy_dir_clean(interface_source, &interface_destination)
 }
 
 /// Snapshot a pure-Faber package: interfaces already copied; write thin target metadata.

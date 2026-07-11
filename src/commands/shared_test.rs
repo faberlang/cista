@@ -1,5 +1,31 @@
 use super::*;
 use crate::manifest::{Binding, PackageRole, SourceSection, TargetSection};
+use std::fs;
+
+fn temp_root(name: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "cista-shared-{name}-{}-{nanos}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&path).expect("create temp root");
+    path
+}
+
+fn buildable_manifest() -> CistaManifest {
+    let mut manifest = manifest(SourceKind::Source, TargetMode::Compile);
+    manifest.target.artifact = None;
+    manifest.target.source = Some(PathBuf::from("target"));
+    manifest.target.compile = Some(crate::manifest::CompileSection {
+        emit: "library".to_owned(),
+        crate_type: "rlib".to_owned(),
+        edition: "2021".to_owned(),
+    });
+    manifest
+}
 
 fn manifest(kind: SourceKind, mode: TargetMode) -> CistaManifest {
     CistaManifest {
@@ -155,4 +181,85 @@ fn manifest_shape_requires_bindings_for_manifest_policy() {
 
     assert!(diagnostics.iter().any(|diagnostic| diagnostic
         == "binding policy `manifest` requires at least one [[bindings]] row"));
+}
+
+#[test]
+fn package_manifest_paths_must_be_relative_and_contained() {
+    let root = temp_root("manifest-path-boundary");
+    let package = root.join("package");
+    let external = root.join("external");
+    fs::create_dir_all(package.join("interfaces")).expect("create interfaces");
+    fs::create_dir_all(package.join("target")).expect("create target source");
+    fs::create_dir_all(&external).expect("create external root");
+
+    let mut manifest = buildable_manifest();
+    manifest.source.interfaces = external.join("interfaces");
+    manifest.source.sources = Some(external.join("sources"));
+    manifest.target.source = Some(external.join("target"));
+    manifest.target.artifact = Some(external.join("artifact"));
+    fs::write(
+        package.join("cista.toml"),
+        toml::to_string_pretty(&manifest).expect("serialize malicious manifest"),
+    )
+    .expect("write malicious manifest");
+
+    let diagnostics = match validate_package(&package, Path::new("cista.toml"), None, false) {
+        Ok(_) => panic!("absolute package paths must be rejected"),
+        Err(diagnostics) => diagnostics,
+    };
+    for field in [
+        "source.interfaces",
+        "source.sources",
+        "target.source",
+        "target.artifact",
+    ] {
+        assert!(
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic.contains(&format!("{field} path must be relative"))
+            }),
+            "missing boundary diagnostic for {field}: {diagnostics:?}"
+        );
+    }
+    let parent_escape = resolve_package_path(&package, "target.source", Path::new("../external"))
+        .expect_err("parent-escaping package path must be rejected");
+    assert!(
+        parent_escape.contains("must be normalized"),
+        "{parent_escape}"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[cfg(unix)]
+#[test]
+fn package_manifest_paths_must_resolve_symlinks_inside_package_root() {
+    use std::os::unix::fs::symlink;
+
+    let root = temp_root("manifest-symlink-boundary");
+    let package = root.join("package");
+    let external = root.join("external-target");
+    fs::create_dir_all(package.join("interfaces")).expect("create interfaces");
+    fs::create_dir_all(&external).expect("create external target");
+    symlink(&external, package.join("target")).expect("create escaping target symlink");
+
+    let manifest = buildable_manifest();
+    fs::write(
+        package.join("cista.toml"),
+        toml::to_string_pretty(&manifest).expect("serialize symlink manifest"),
+    )
+    .expect("write symlink manifest");
+
+    let diagnostics = match validate_package(&package, Path::new("cista.toml"), None, false) {
+        Ok(_) => panic!("escaping symlink must be rejected"),
+        Err(diagnostics) => diagnostics,
+    };
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic
+                .contains("target.source path resolves outside package root")),
+        "missing symlink boundary diagnostic: {diagnostics:?}"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
 }

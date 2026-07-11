@@ -1,14 +1,20 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Component;
 
-use crate::manifest::{
-    manifest_path, read_manifest, BindingPolicy, CistaManifest, SourceKind, TargetMode,
-};
+use crate::manifest::{read_manifest, BindingPolicy, CistaManifest, SourceKind, TargetMode};
 
 use super::{fs, rust_target, Path, PathBuf};
 
 pub(super) struct CheckedPackage {
     pub package_root: PathBuf,
     pub manifest: CistaManifest,
+    pub paths: PackagePaths,
+}
+
+pub(super) struct PackagePaths {
+    pub interfaces: Option<PathBuf>,
+    pub target_source: Option<PathBuf>,
+    pub artifact: Option<PathBuf>,
 }
 
 pub(super) fn validate_package(
@@ -18,7 +24,8 @@ pub(super) fn validate_package(
     verify_build: bool,
 ) -> Result<CheckedPackage, Vec<String>> {
     let package_root = normalize_path(package_path);
-    let manifest_path = manifest_path(&package_root, Some(manifest_name));
+    let manifest_path =
+        package_manifest_path(&package_root, manifest_name).map_err(|error| vec![error])?;
     let manifest = read_manifest(&manifest_path).map_err(|err| vec![err])?;
 
     let mut diagnostics = Vec::new();
@@ -33,13 +40,23 @@ pub(super) fn validate_package(
         }
     }
 
-    let interface_root = package_root.join(&manifest.source.interfaces);
-    let interface_symbols = validate_interfaces(&interface_root, &manifest, &mut diagnostics);
-    validate_target_paths(&package_root, &manifest, &mut diagnostics);
+    let paths = resolve_package_paths(&package_root, &manifest, &mut diagnostics);
+    let interface_symbols = paths
+        .interfaces
+        .as_deref()
+        .map(|interface_root| {
+            validate_interfaces(&package_root, interface_root, &manifest, &mut diagnostics)
+        })
+        .unwrap_or_default();
+    validate_target_paths(&paths, &manifest, &mut diagnostics);
     validate_bindings(&manifest, &interface_symbols, &mut diagnostics);
 
     if verify_build {
-        rust_target::verify_target_build(&package_root, &manifest, &mut diagnostics);
+        rust_target::verify_target_build(
+            &manifest,
+            paths.target_source.as_deref(),
+            &mut diagnostics,
+        );
     }
 
     if !diagnostics.is_empty() {
@@ -48,7 +65,111 @@ pub(super) fn validate_package(
         Ok(CheckedPackage {
             package_root,
             manifest,
+            paths,
         })
+    }
+}
+
+pub(super) fn package_manifest_path(
+    package_root: &Path,
+    manifest_name: &Path,
+) -> Result<PathBuf, String> {
+    resolve_package_path(package_root, "manifest", manifest_name)
+}
+
+pub(super) fn resolve_package_path(
+    package_root: &Path,
+    field: &str,
+    path: &Path,
+) -> Result<PathBuf, String> {
+    if path.as_os_str().is_empty() {
+        return Err(format!("{field} path must not be empty"));
+    }
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::Prefix(_) | Component::RootDir))
+    {
+        return Err(format!("{field} path must be relative: {}", path.display()));
+    }
+    if path
+        .components()
+        .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
+    {
+        return Err(format!(
+            "{field} path must be normalized without `.` or `..` segments: {}",
+            path.display()
+        ));
+    }
+
+    let candidate = package_root.join(path);
+    let resolved = candidate.canonicalize().map_err(|error| {
+        format!(
+            "{field} path cannot be resolved: {}: {error}",
+            candidate.display()
+        )
+    })?;
+    if !resolved.starts_with(package_root) {
+        return Err(format!(
+            "{field} path resolves outside package root: {}",
+            resolved.display()
+        ));
+    }
+    Ok(resolved)
+}
+
+fn resolve_package_paths(
+    package_root: &Path,
+    manifest: &CistaManifest,
+    diagnostics: &mut Vec<String>,
+) -> PackagePaths {
+    let interfaces = resolve_manifest_path(
+        package_root,
+        "source.interfaces",
+        &manifest.source.interfaces,
+        diagnostics,
+    );
+    if let Some(path) = manifest.source.sources.as_deref() {
+        validate_manifest_path(package_root, "source.sources", path, diagnostics);
+    }
+    let target_source =
+        manifest.target.source.as_deref().and_then(|path| {
+            resolve_manifest_path(package_root, "target.source", path, diagnostics)
+        });
+    let artifact =
+        manifest.target.artifact.as_deref().and_then(|path| {
+            resolve_manifest_path(package_root, "target.artifact", path, diagnostics)
+        });
+    PackagePaths {
+        interfaces,
+        target_source,
+        artifact,
+    }
+}
+
+fn resolve_manifest_path(
+    package_root: &Path,
+    field: &str,
+    path: &Path,
+    diagnostics: &mut Vec<String>,
+) -> Option<PathBuf> {
+    match resolve_package_path(package_root, field, path) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            diagnostics.push(error);
+            None
+        }
+    }
+}
+
+fn validate_manifest_path(
+    package_root: &Path,
+    field: &str,
+    path: &Path,
+    diagnostics: &mut Vec<String>,
+) {
+    if let Err(error) = resolve_package_path(package_root, field, path) {
+        diagnostics.push(error);
     }
 }
 
@@ -164,6 +285,7 @@ fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<Strin
 }
 
 fn validate_interfaces(
+    package_root: &Path,
     interface_root: &Path,
     manifest: &CistaManifest,
     diagnostics: &mut Vec<String>,
@@ -182,6 +304,23 @@ fn validate_interfaces(
             continue;
         }
         let interface_path = interface_root.join(format!("{}.fab", binding.source_module));
+        let interface_path = match interface_path.canonicalize() {
+            Ok(path) if path.starts_with(package_root) => path,
+            Ok(path) => {
+                diagnostics.push(format!(
+                    "interface path resolves outside package root: {}",
+                    path.display()
+                ));
+                continue;
+            }
+            Err(err) => {
+                diagnostics.push(format!(
+                    "failed to resolve interface {}: {err}",
+                    interface_path.display()
+                ));
+                continue;
+            }
+        };
         match read_interface_symbols(&interface_path) {
             Ok(found) => {
                 symbols.insert(binding.source_module.clone(), found);
@@ -194,22 +333,11 @@ fn validate_interfaces(
 }
 
 fn validate_target_paths(
-    package_root: &Path,
+    paths: &PackagePaths,
     manifest: &CistaManifest,
     diagnostics: &mut Vec<String>,
 ) {
-    if let Some(source) = &manifest.source.sources {
-        let path = package_root.join(source);
-        if !path.exists() {
-            diagnostics.push(format!(
-                "source.sources path does not exist: {}",
-                path.display()
-            ));
-        }
-    }
-
-    if let Some(source) = &manifest.target.source {
-        let path = package_root.join(source);
+    if let Some(path) = &paths.target_source {
         if !path.is_dir() {
             diagnostics.push(format!(
                 "target.source does not point to a directory: {}",
@@ -218,17 +346,21 @@ fn validate_target_paths(
         }
         if manifest.target.language == rust_target::RUST_LANGUAGE {
             let cargo_toml = path.join("Cargo.toml");
-            if !cargo_toml.is_file() {
-                diagnostics.push(format!(
+            match cargo_toml.canonicalize() {
+                Ok(resolved) if resolved.starts_with(path) => {}
+                Ok(resolved) => diagnostics.push(format!(
+                    "rust target Cargo.toml resolves outside target.source: {}",
+                    resolved.display()
+                )),
+                Err(_) => diagnostics.push(format!(
                     "rust target.source is missing Cargo.toml: {}",
                     cargo_toml.display()
-                ));
+                )),
             }
         }
     }
 
-    if let Some(artifact) = &manifest.target.artifact {
-        let path = package_root.join(artifact);
+    if let Some(path) = &paths.artifact {
         if !path.is_file() {
             diagnostics.push(format!(
                 "target.artifact does not point to a file: {}",
@@ -284,9 +416,10 @@ fn validate_module_path(module: &str, diagnostics: &mut Vec<String>) {
     if module.is_empty() {
         return;
     }
-    if module
-        .split('/')
-        .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    if module.contains('\\')
+        || module
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "." || segment == "..")
     {
         diagnostics.push(format!(
             "invalid source_module `{module}`: module paths must not contain empty, dot, or dot-dot segments"

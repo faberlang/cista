@@ -7,8 +7,8 @@ use super::{Path, PathBuf};
 pub(super) const RUST_LANGUAGE: &str = "rust";
 
 pub(super) fn verify_target_build(
-    package_root: &Path,
     manifest: &CistaManifest,
+    target_source: Option<&Path>,
     diagnostics: &mut Vec<String>,
 ) {
     if manifest.target.language != RUST_LANGUAGE {
@@ -31,12 +31,17 @@ pub(super) fn verify_target_build(
         return;
     }
 
-    let Ok((cargo_toml, _)) = rust_cargo_paths(package_root, manifest) else {
+    let Some(target_source) = target_source else {
         return;
     };
-    if !cargo_toml.is_file() {
-        return;
-    }
+    let cargo_toml = match contained_cargo_manifest(target_source) {
+        Ok(Some(path)) => path,
+        Ok(None) => return,
+        Err(err) => {
+            diagnostics.push(err);
+            return;
+        }
+    };
 
     if let Err(err) = run_cargo(&cargo_toml, &["check"], "cargo check") {
         diagnostics.push(err);
@@ -44,10 +49,15 @@ pub(super) fn verify_target_build(
 }
 
 pub(super) fn build_rust_artifact(
-    package_root: &Path,
+    target_source: &Path,
     manifest: &CistaManifest,
 ) -> Result<PathBuf, String> {
-    let (cargo_toml, target_source) = rust_cargo_paths(package_root, manifest)?;
+    let cargo_toml = contained_cargo_manifest(target_source)?.ok_or_else(|| {
+        format!(
+            "rust target.source is missing Cargo.toml: {}",
+            target_source.display()
+        )
+    })?;
     let crate_name = manifest
         .target
         .crate_name
@@ -62,8 +72,7 @@ pub(super) fn build_rust_artifact(
     };
     run_cargo(&cargo_toml, &cargo_args, "cargo build")?;
 
-    let artifact = package_root
-        .join(target_source)
+    let artifact = target_source
         .join("target")
         .join("debug")
         .join(artifact_name);
@@ -76,15 +85,24 @@ pub(super) fn build_rust_artifact(
     Ok(artifact)
 }
 
-pub(super) fn rust_cargo_paths(
-    package_root: &Path,
-    manifest: &CistaManifest,
-) -> Result<(PathBuf, PathBuf), String> {
-    let Some(target_source) = manifest.target.source.clone() else {
-        return Err("rust target requires target.source".to_owned());
-    };
-    let cargo_toml = package_root.join(&target_source).join("Cargo.toml");
-    Ok((cargo_toml, target_source))
+fn contained_cargo_manifest(target_source: &Path) -> Result<Option<PathBuf>, String> {
+    let cargo_toml = target_source.join("Cargo.toml");
+    if !cargo_toml.is_file() {
+        return Ok(None);
+    }
+    let resolved = cargo_toml.canonicalize().map_err(|error| {
+        format!(
+            "failed to resolve rust target Cargo.toml {}: {error}",
+            cargo_toml.display()
+        )
+    })?;
+    if !resolved.starts_with(target_source) {
+        return Err(format!(
+            "rust target Cargo.toml resolves outside target.source: {}",
+            resolved.display()
+        ));
+    }
+    Ok(Some(resolved))
 }
 
 pub(super) fn run_cargo(cargo_toml: &Path, cargo_args: &[&str], label: &str) -> Result<(), String> {
