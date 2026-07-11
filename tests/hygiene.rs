@@ -14,7 +14,7 @@ fn config() -> ScanConfig {
 
 const BUDGETS: Budgets = Budgets {
     unwrap: 0,
-    expect: 1,
+    expect: 0,
     panic: 0,
     unreachable: 0,
     todo: 0,

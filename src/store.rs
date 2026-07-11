@@ -110,7 +110,7 @@ fn utf8_directory_name(path: &Path, kind: &str) -> Result<String, String> {
 pub fn find_installed(store_root: &Path, package_id: &str) -> Result<InstalledPackage, String> {
     let (name, version) = split_package_id(package_id);
     let installed = list_installed(store_root)?;
-    let matches: Vec<_> = installed
+    let mut matches: Vec<_> = installed
         .into_iter()
         .filter(|pkg| pkg.name == name)
         .collect();
@@ -132,7 +132,12 @@ pub fn find_installed(store_root: &Path, package_id: &str) -> Result<InstalledPa
             });
     }
     if matches.len() == 1 {
-        return Ok(matches.into_iter().next().expect("len checked"));
+        return matches.pop().ok_or_else(|| {
+            format!(
+                "package `{name}` is not installed in store {}",
+                store_root.display()
+            )
+        });
     }
     let versions = matches
         .iter()
