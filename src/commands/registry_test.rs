@@ -337,12 +337,13 @@ binding_policy = "generated"
 "#,
     )
     .expect("write package manifest");
+    assert!(!registry.exists(), "registry must start absent");
 
     let error = publish(&source, Path::new("cista.toml"), Some(&registry))
         .expect_err("registry inside package should fail closed");
 
     assert!(error.contains("cannot be inside published package"));
-    assert!(!registry.join("tool/1.2.3").exists());
+    assert!(!registry.exists());
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
 

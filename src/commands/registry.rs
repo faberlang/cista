@@ -94,7 +94,14 @@ pub(super) fn publish(
 ) -> Result<PathBuf, String> {
     let checked = shared::validate_package(package_path, manifest_name, None, false)
         .map_err(|diagnostics| diagnostics.join("; "))?;
-    let registry = registry_root(explicit_registry)?;
+    let registry = resolve_publish_root(&registry_root(explicit_registry)?)?;
+    if registry.starts_with(&checked.package_root) {
+        return Err(format!(
+            "local registry {} cannot be inside published package {}",
+            registry.display(),
+            checked.package_root.display()
+        ));
+    }
     std::fs::create_dir_all(&registry).map_err(|error| {
         format!(
             "failed to create local registry {}: {error}",
@@ -107,13 +114,6 @@ pub(super) fn publish(
             registry.display()
         )
     })?;
-    if registry.starts_with(&checked.package_root) {
-        return Err(format!(
-            "local registry {} cannot be inside published package {}",
-            registry.display(),
-            checked.package_root.display()
-        ));
-    }
     let destination = registry
         .join(&checked.manifest.source.package)
         .join(&checked.manifest.source.version);
@@ -191,6 +191,34 @@ fn verify_registry_publish_path(registry: &Path, package: &Path) -> Result<(), S
             )
         })?;
     verify_registry_package_path(registry, existing_parent)
+}
+
+fn resolve_publish_root(registry: &Path) -> Result<PathBuf, String> {
+    let existing_parent = registry
+        .ancestors()
+        .find(|ancestor| ancestor.exists())
+        .ok_or_else(|| {
+            format!(
+                "local registry has no existing parent: {}",
+                registry.display()
+            )
+        })?;
+    let suffix = registry.strip_prefix(existing_parent).map_err(|error| {
+        format!(
+            "failed to resolve local registry {} from existing parent {}: {error}",
+            registry.display(),
+            existing_parent.display()
+        )
+    })?;
+    existing_parent
+        .canonicalize()
+        .map(|parent| parent.join(suffix))
+        .map_err(|error| {
+            format!(
+                "failed to resolve local registry parent {}: {error}",
+                existing_parent.display()
+            )
+        })
 }
 
 fn verify_registry_package_path(registry: &Path, package: &Path) -> Result<(), String> {
