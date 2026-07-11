@@ -1,6 +1,6 @@
 use std::fs;
 
-use super::{list_package_files, read_any_target_manifest, InstalledPackage};
+use super::{list_package_files, read_any_target_manifest, utf8_directory_name, InstalledPackage};
 
 fn temporary_dir(label: &str) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!(
@@ -52,4 +52,21 @@ fn malformed_target_manifest_is_reported() {
 
     assert!(error.contains("failed to parse"), "{error}");
     fs::remove_dir_all(root).expect("temporary directory should be removed");
+}
+
+#[cfg(unix)]
+#[test]
+fn package_directory_name_rejects_non_utf8_input() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let invalid_name = OsString::from_vec(vec![b'p', 0xff]);
+
+    let error = utf8_directory_name(&std::path::PathBuf::from(invalid_name), "package")
+        .expect_err("non-UTF-8 package name should fail closed");
+
+    assert!(
+        error.contains("package directory name is not UTF-8"),
+        "{error}"
+    );
 }
