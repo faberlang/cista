@@ -95,9 +95,16 @@ pub(super) fn publish(
     let checked = shared::validate_package(package_path, manifest_name, None, false)
         .map_err(|diagnostics| diagnostics.join("; "))?;
     let registry = registry_root(explicit_registry)?;
+    std::fs::create_dir_all(&registry).map_err(|error| {
+        format!(
+            "failed to create local registry {}: {error}",
+            registry.display()
+        )
+    })?;
     let destination = registry
         .join(&checked.manifest.source.package)
         .join(&checked.manifest.source.version);
+    verify_registry_publish_path(&registry, &destination)?;
     if destination.exists() {
         return Err(format!(
             "registry package already exists and is immutable: {}",
@@ -139,6 +146,19 @@ pub(super) fn fetch_to_cache(
         .join(&version);
     fs_util::copy_dir_clean(&source, &destination)?;
     Ok(destination)
+}
+
+fn verify_registry_publish_path(registry: &Path, package: &Path) -> Result<(), String> {
+    let existing_parent = package
+        .ancestors()
+        .find(|ancestor| ancestor.exists())
+        .ok_or_else(|| {
+            format!(
+                "local registry package has no existing parent: {}",
+                package.display()
+            )
+        })?;
+    verify_registry_package_path(registry, existing_parent)
 }
 
 fn verify_registry_package_path(registry: &Path, package: &Path) -> Result<(), String> {
