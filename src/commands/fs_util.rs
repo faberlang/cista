@@ -1,15 +1,57 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use super::{fs, Path};
 
+static REPLACEMENT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 pub(super) fn copy_dir_clean(source: &Path, destination: &Path) -> Result<(), String> {
+    let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let staging = replacement_path(destination, "incoming", sequence);
+    let backup = replacement_path(destination, "replaced", sequence);
+
+    if let Err(error) = copy_dir_recursive(source, &staging) {
+        remove_directory_if_present(&staging)?;
+        return Err(error);
+    }
+
     if destination.exists() {
-        fs::remove_dir_all(destination).map_err(|err| {
+        fs::rename(destination, &backup).map_err(|err| {
             format!(
-                "failed to replace directory {}: {err}",
+                "failed to stage existing directory {} for replacement: {err}",
                 destination.display()
             )
         })?;
     }
-    copy_dir_recursive(source, destination)
+    if let Err(error) = fs::rename(&staging, destination) {
+        if backup.exists() {
+            fs::rename(&backup, destination).map_err(|rollback_error| {
+                format!(
+                    "failed to restore {} after replacement failed: {rollback_error}",
+                    destination.display()
+                )
+            })?;
+        }
+        return Err(format!(
+            "failed to install replacement directory {}: {error}",
+            destination.display()
+        ));
+    }
+    remove_directory_if_present(&backup)
+}
+
+fn replacement_path(destination: &Path, state: &str, sequence: u64) -> std::path::PathBuf {
+    destination.with_extension(format!("{state}-{}-{sequence}", std::process::id()))
+}
+
+fn remove_directory_if_present(path: &Path) -> Result<(), String> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!(
+            "failed to remove directory {}: {err}",
+            path.display()
+        )),
+    }
 }
 
 pub(super) fn replace_directory(path: &Path) -> Result<(), String> {
