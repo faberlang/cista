@@ -19,7 +19,7 @@ const BUDGETS: Budgets = Budgets {
     unreachable: 0,
     todo: 0,
     unimplemented: 0,
-    let_underscore: 1,
+    let_underscore: 0,
     inline_test_modules: 0,
     test_attr_in_production: 0,
 };
