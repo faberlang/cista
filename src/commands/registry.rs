@@ -101,6 +101,19 @@ pub(super) fn publish(
             registry.display()
         )
     })?;
+    let registry = registry.canonicalize().map_err(|error| {
+        format!(
+            "failed to resolve local registry {}: {error}",
+            registry.display()
+        )
+    })?;
+    if registry.starts_with(&checked.package_root) {
+        return Err(format!(
+            "local registry {} cannot be inside published package {}",
+            registry.display(),
+            checked.package_root.display()
+        ));
+    }
     let destination = registry
         .join(&checked.manifest.source.package)
         .join(&checked.manifest.source.version);
