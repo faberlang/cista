@@ -93,14 +93,28 @@ fn runtimes(package_id: &str, store: Option<&std::path::Path>) -> CommandResult 
     if let Some((_, manifest)) =
         store::read_any_target_manifest(&package).map_err(|err| vec![err])?
     {
-        for binding in &manifest.bindings {
-            println!(
-                "{}#{} -> {}",
-                binding.source_module, binding.source_symbol, binding.target
-            );
+        let bindings = runtime_binding_lines(&manifest.bindings);
+        if bindings.is_empty() {
+            println!("(no runtime bindings found)");
+        } else {
+            for binding in bindings {
+                println!("{binding}");
+            }
         }
     } else {
         println!("(no target manifest with bindings found)");
     }
     Ok(())
+}
+
+fn runtime_binding_lines(bindings: &[crate::manifest::Binding]) -> Vec<String> {
+    bindings
+        .iter()
+        .map(|binding| {
+            format!(
+                "{}#{} -> {}",
+                binding.source_module, binding.source_symbol, binding.target
+            )
+        })
+        .collect()
 }
