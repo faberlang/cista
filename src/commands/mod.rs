@@ -62,8 +62,8 @@ pub fn run(cli: CistaCli) {
         CistaCommand::Target(args) => target::run(args),
         CistaCommand::Publish(args) => publish::run(args),
         CistaCommand::Yank(args) => yank::run(args),
-        CistaCommand::Login => login::run(),
-        CistaCommand::Logout => logout::run(),
+        CistaCommand::Login(args) => login::run(args),
+        CistaCommand::Logout(args) => logout::run(args),
         CistaCommand::Doctor => doctor::run(),
     };
 

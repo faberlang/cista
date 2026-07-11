@@ -7,6 +7,7 @@
 pub mod cache;
 pub mod cli;
 pub mod commands;
+pub mod credentials;
 pub mod diagnostics;
 pub mod faber_lock;
 pub mod manifest;

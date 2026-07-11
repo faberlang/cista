@@ -841,12 +841,19 @@ fetch, unauthorized rejection, and path-escape rejection without weakening the
 plain-HTTP credential prohibition. This is client-contract evidence, not a live
 cista.dev product run.
 
+**Credential CLI slice closed 2026-07-10:** `cista login` reads a bearer token
+from an explicitly named environment variable and stores it by bare HTTPS
+origin; `cista logout` removes only that origin. The owner-only TOML file is
+written atomically, rejects loose Unix permissions, and never accepts token
+values on the command line. Hermetic tests cover replacement, origin isolation,
+removal, URL rejection, and file mode. Remote fetch/publish CLI routing still
+awaits the fixed archive/server contract; no live cista.dev result is claimed.
+
 - Remote API paths are origin-relative and must begin with exactly one `/`.
 - Authenticated requests use `Authorization: Bearer <token>` only over HTTPS.
 - Transport errors and non-success responses are terminal; remote operations
   must not silently fall back to the local filesystem registry.
-- Credential persistence and CLI routing remain later Phase G slices after the
-  server contract is fixed.
+- Remote fetch/publish CLI routing remains after the server contract is fixed.
 
 **Exit:** a CLI fetch/publish operation can use the authenticated remote
 transport against the fixed cista.dev API without weakening local/dev behavior.
