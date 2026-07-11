@@ -28,4 +28,4 @@ Each `goal.md` owns its **Status** line.
 
 | Goal | Status | Entry |
 | ---- | ------ | ----- |
-| Cista package store | Phase G hermetic HTTP/auth client closed; live cista.dev proof environment-gated | [`cista-package-store/goal.md`](cista-package-store/goal.md) |
+| Cista package store | Phase G and path-safety theme v1 closed; live cista.dev proof operator-gated | [`cista-package-store/goal.md`](cista-package-store/goal.md) |

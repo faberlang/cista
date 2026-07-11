@@ -1,8 +1,8 @@
 # Goal: Cista Package Store Model
 
-**Status**: Phase G hermetic HTTP/auth client closed; live cista.dev validation environment-gated
+**Status**: Phase G and path-safety theme v1 closed; live cista.dev validation operator-gated
 **Created**: 2026-06-21
-**Updated**: 2026-07-10
+**Updated**: 2026-07-11
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
 **Factory Artifact Dir**: `docs/factory/cista-package-store/`
 **Related**: `phase-a-delivery.md` (shipped), `phase-b-problem.md` (problem lock), `phase-b-delivery.md` (Phase B closed)
@@ -828,7 +828,7 @@ remain residual work rather than a fabricated protocol. See
 
 ### Phase G — cista.dev HTTP/auth transport
 
-**Active 2026-07-10:** establish the remote client transport independently of
+**Closed 2026-07-10:** the remote client transport is established independently of
 the filesystem registry. The first slice provides an HTTP(S) client contract,
 optional bearer authentication, strict success-status handling, and local
 loopback contract tests. Credentials fail closed over plain HTTP. Live
@@ -869,6 +869,21 @@ transport against the fixed cista.dev API without weakening local/dev behavior.
 **Exit evidence:** satisfied hermetically by authenticated archive round trips,
 CLI route selection, credential isolation, and staged cache extraction. A live
 host smoke test remains environment-gated evidence, not a local fake.
+
+#### Path-safety theme v1
+
+**Closed 2026-07-11 at `64a567d`:** registry and archive paths now preserve a
+single containment invariant from local package selection through remote
+transfer and replacement staging. The completed sequence covers local package
+and publish containment, immutable publish reservations, recursive publish-root
+and destination rejection, nested-root rejection before creation, unsafe remote
+and inbound archive entry rejection, overlapping copy rejection, and exclusive
+replacement-staging reservation.
+
+This closes the bounded path-safety theme through `64a567d`; it does not claim a
+live cista.dev run. No further unblocked unit is named by the current map. Work
+therefore pauses at the operator-gated live proof below rather than reopening a
+closed phase or inventing an open-ended polish stream.
 
 #### Post-Phase-G gated live proof
 
