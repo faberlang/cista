@@ -1,6 +1,6 @@
 # Goal: Cista Package Store Model
 
-**Status**: active — Phases A–F local/dev loop closed; next: cista.dev HTTP/auth transport
+**Status**: Phase G hermetic HTTP/auth client closed; live cista.dev validation environment-gated
 **Created**: 2026-06-21
 **Updated**: 2026-07-10
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
@@ -846,17 +846,29 @@ from an explicitly named environment variable and stores it by bare HTTPS
 origin; `cista logout` removes only that origin. The owner-only TOML file is
 written atomically, rejects loose Unix permissions, and never accepts token
 values on the command line. Hermetic tests cover replacement, origin isolation,
-removal, URL rejection, and file mode. Remote fetch/publish CLI routing still
-awaits the fixed archive/server contract; no live cista.dev result is claimed.
+removal, URL rejection, and file mode. No live cista.dev result is claimed.
+
+**Remote CLI routing closed 2026-07-10:** `fetch` and `publish` accept an
+explicit `--registry-url` that conflicts with the filesystem `--registry`
+route, load only the matching HTTPS-origin credential, and transfer a package
+tar archive through the authenticated client. Fetch validates a staged archive
+before replacing the cache. Hermetic archive, routing, authentication, and
+failure tests pass. Live cista.dev remains an environment-gated integration
+proof and is not claimed by this closeout.
 
 - Remote API paths are origin-relative and must begin with exactly one `/`.
 - Authenticated requests use `Authorization: Bearer <token>` only over HTTPS.
 - Transport errors and non-success responses are terminal; remote operations
   must not silently fall back to the local filesystem registry.
-- Remote fetch/publish CLI routing remains after the server contract is fixed.
+- Server evolution must retain the fail-closed and immutable package semantics
+  proved by the hermetic client contract.
 
 **Exit:** a CLI fetch/publish operation can use the authenticated remote
 transport against the fixed cista.dev API without weakening local/dev behavior.
+
+**Exit evidence:** satisfied hermetically by authenticated archive round trips,
+CLI route selection, credential isolation, and staged cache extraction. A live
+host smoke test remains environment-gated evidence, not a local fake.
 
 ### Explicitly not in A–D
 

@@ -43,10 +43,11 @@ cargo build --release
 
 ## Status
 
-Local library store loop (Phase A): `check`, `install --path` (with optional
-`--project` / cwd `faber.lock` rewrite), store `package list|show|files`,
-`inspect`, and `remove` are implemented. Registry and several other verbs remain
-staged.
+The local package loop supports install, inspect, remove, binary execution,
+meta packages, and a filesystem development registry. The remote client has a
+hermetic HTTPS/bearer contract with `login`, `logout`, `fetch --registry-url`,
+and `publish --registry-url`; live cista.dev validation remains
+environment-gated.
 
 ## Factory goals
 

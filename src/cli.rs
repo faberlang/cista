@@ -267,6 +267,10 @@ pub struct PublishArgs {
     /// Local/dev registry root; falls back to CISTA_REGISTRY
     #[arg(long)]
     pub registry: Option<PathBuf>,
+
+    /// Remote HTTPS registry origin; mutually exclusive with --registry
+    #[arg(long, conflicts_with = "registry")]
+    pub registry_url: Option<String>,
 }
 
 /// Installed binary execution arguments.
@@ -297,6 +301,10 @@ pub struct PackageArg {
     /// Local/dev registry root; falls back to CISTA_REGISTRY
     #[arg(long)]
     pub registry: Option<PathBuf>,
+
+    /// Remote HTTPS registry origin; mutually exclusive with --registry
+    #[arg(long, conflicts_with = "registry")]
+    pub registry_url: Option<String>,
 }
 
 /// Optional package identifier argument.
