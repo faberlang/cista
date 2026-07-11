@@ -311,6 +311,141 @@ binding_policy = "generated"
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
 
+fn write_interfaces_only_package(package: &Path, name: &str) {
+    fs::create_dir_all(package.join("interfaces")).expect("create package interfaces");
+    fs::write(
+        package.join("cista.toml"),
+        format!(
+            r#"[source]
+package = "{name}"
+version = "0.1.0"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#
+        ),
+    )
+    .expect("write interfaces-only manifest");
+    fs::write(
+        package.join("interfaces/example.fab"),
+        "functio lege() → nihil { redde nihil }\n",
+    )
+    .expect("write package interface");
+}
+
+#[test]
+fn install_commit_failure_preserves_existing_snapshot() {
+    let root = temp_root("install-commit-failure");
+    let package = root.join("package");
+    let store = root.join("store");
+    write_interfaces_only_package(&package, "example");
+
+    let installed = store.join("example/0.1.0");
+    fs::create_dir_all(installed.join("interfaces")).expect("create old interfaces");
+    fs::create_dir_all(installed.join("targets/rust/old")).expect("create old target");
+    fs::write(installed.join("interfaces/old.fab"), "old interface\n")
+        .expect("write old interface");
+    fs::write(installed.join("targets/rust/old/marker"), "old target\n").expect("write old target");
+
+    fs_util::inject_commit_failure(&installed.canonicalize().expect("canonical installed path"));
+    let error = run(InstallArgs {
+        path: Some(package),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("injected package commit failure should fail install");
+    assert!(error
+        .iter()
+        .any(|message| message.contains("injected failure")));
+    assert_eq!(
+        fs::read_to_string(installed.join("interfaces/old.fab")).expect("read old interface"),
+        "old interface\n"
+    );
+    assert_eq!(
+        fs::read_to_string(installed.join("targets/rust/old/marker")).expect("read old target"),
+        "old target\n"
+    );
+    assert!(!installed.join("interfaces/example.fab").exists());
+    assert_eq!(
+        fs::read_dir(store.join("example"))
+            .expect("read package versions")
+            .count(),
+        1,
+        "failed install must not leave a sibling staging directory"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn meta_commit_failure_preserves_existing_snapshot() {
+    let root = temp_root("meta-commit-failure");
+    let packages = root.join("packages");
+    let dependency = packages.join("dependency");
+    let meta = packages.join("meta");
+    let store = root.join("store");
+    write_interfaces_only_package(&dependency, "dependency");
+    fs::create_dir_all(&meta).expect("create meta package");
+    fs::write(
+        meta.join("cista.toml"),
+        r#"[source]
+package = "meta"
+version = "0.1.0"
+role = "meta"
+
+[[dependencies]]
+package = "dependency"
+version = "0.1.0"
+path = "../dependency"
+"#,
+    )
+    .expect("write meta manifest");
+
+    let installed = store.join("meta/0.1.0");
+    fs::create_dir_all(&installed).expect("create old meta snapshot");
+    fs::write(installed.join("cista.toml"), "old meta snapshot\n")
+        .expect("write old meta snapshot");
+
+    fs_util::inject_commit_failure(&installed.canonicalize().expect("canonical installed path"));
+    let error = run(InstallArgs {
+        path: Some(meta),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("injected meta commit failure should fail install");
+    assert!(error
+        .iter()
+        .any(|message| message.contains("injected failure")));
+    assert_eq!(
+        fs::read_to_string(installed.join("cista.toml")).expect("read old meta snapshot"),
+        "old meta snapshot\n"
+    );
+    assert_eq!(
+        fs::read_dir(store.join("meta"))
+            .expect("read meta versions")
+            .count(),
+        1,
+        "failed meta install must not leave a sibling staging directory"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
 #[test]
 fn install_real_norma_platform_default_builds_nested_import_without_dependency() {
     let root = temp_root("real-norma-platform-default");

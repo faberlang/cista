@@ -103,7 +103,6 @@ fn install_meta_package(
     let meta_root = store_root
         .join(&meta.source.package)
         .join(&meta.source.version);
-    fs_util::replace_directory(&meta_root).map_err(|err| vec![err])?;
     let installed_meta = MetaManifest {
         source: meta.source.clone(),
         dependencies: meta
@@ -118,8 +117,15 @@ fn install_meta_package(
     };
     let contents = toml::to_string_pretty(&installed_meta)
         .map_err(|err| vec![format!("failed to render installed meta manifest: {err}")])?;
-    fs::write(meta_root.join(manifest::MANIFEST_FILE), contents)
-        .map_err(|err| vec![format!("failed to write installed meta manifest: {err}")])?;
+    let staging = fs_util::stage_directory(&meta_root).map_err(|err| vec![err])?;
+    let result = fs::write(staging.join(manifest::MANIFEST_FILE), contents)
+        .map_err(|err| vec![format!("failed to write installed meta manifest: {err}")]);
+    if let Err(errors) = result {
+        return Err(cleanup_staged_install(&staging, errors));
+    }
+    if let Err(error) = fs_util::commit_staged_directory(&staging, &meta_root) {
+        return Err(cleanup_staged_install(&staging, vec![error]));
+    }
     println!(
         "installed: {} {} -> {} (meta, {} dependencies)",
         meta.source.package,
@@ -144,6 +150,36 @@ fn install_checked_package(
     checked: &shared::CheckedPackage,
     store_root: &Path,
 ) -> Result<InstalledPaths, Vec<String>> {
+    let package_store_root = shared::package_store_root(store_root, &checked.manifest);
+    let staging = fs_util::stage_directory(&package_store_root).map_err(|err| vec![err])?;
+    let result = prepare_package_snapshot(checked, &package_store_root, &staging);
+    let installed = match result {
+        Ok(installed) => installed,
+        Err(errors) => return Err(cleanup_staged_install(&staging, errors)),
+    };
+    if let Err(error) = fs_util::commit_staged_directory(&staging, &package_store_root) {
+        return Err(cleanup_staged_install(&staging, vec![error]));
+    }
+
+    println!(
+        "installed: {} {} -> {}{}",
+        checked.manifest.source.package,
+        checked.manifest.source.version,
+        package_store_root.display(),
+        if installed.interfaces_only {
+            " (interfaces only)"
+        } else {
+            ""
+        }
+    );
+    Ok(installed)
+}
+
+fn prepare_package_snapshot(
+    checked: &shared::CheckedPackage,
+    package_store_root: &Path,
+    staging: &Path,
+) -> Result<InstalledPaths, Vec<String>> {
     let manifest = &checked.manifest;
     ensure_rust_source_install(manifest)?;
 
@@ -166,50 +202,38 @@ fn install_checked_package(
         )
     };
 
-    let package_store_root = shared::package_store_root(store_root, manifest);
     let interface_source = checked
         .paths
         .interfaces
         .as_deref()
         .ok_or_else(|| vec!["source.interfaces path was not resolved".to_owned()])?;
-    install_interfaces(interface_source, &package_store_root).map_err(|err| vec![err])?;
+    install_interfaces(interface_source, staging).map_err(|err| vec![err])?;
 
     let artifact_name = if interfaces_only {
-        install_interfaces_only_target(manifest, &package_store_root, &target_triple)
+        install_interfaces_only_target(manifest, staging, &target_triple)
             .map_err(|err| vec![err])?
     } else {
         let artifact = artifact.as_deref().ok_or_else(|| {
             vec!["internal error: compiled package has no built artifact".to_owned()]
         })?;
-        install_built_rust_target(
-            manifest,
-            artifact,
-            &package_store_root,
-            &target_triple,
-            &rustc_version,
-        )
-        .map_err(|err| vec![err])?
+        install_built_rust_target(manifest, artifact, staging, &target_triple, &rustc_version)
+            .map_err(|err| vec![err])?
     };
 
-    println!(
-        "installed: {} {} -> {}{}",
-        manifest.source.package,
-        manifest.source.version,
-        package_store_root.display(),
-        if interfaces_only {
-            " (interfaces only)"
-        } else {
-            ""
-        }
-    );
-
     Ok(InstalledPaths {
-        package_store_root,
+        package_store_root: package_store_root.to_path_buf(),
         target_triple,
         rustc_version,
         artifact_name,
         interfaces_only,
     })
+}
+
+fn cleanup_staged_install(staging: &Path, mut errors: Vec<String>) -> Vec<String> {
+    if let Err(error) = fs_util::discard_staged_directory(staging) {
+        errors.push(error);
+    }
+    errors
 }
 
 fn is_interfaces_only_package(manifest: &CistaManifest) -> bool {

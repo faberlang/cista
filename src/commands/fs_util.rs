@@ -1,8 +1,16 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{fs, Path};
+#[cfg(test)]
+use std::cell::RefCell;
+
+use super::{fs, Path, PathBuf};
 
 static REPLACEMENT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+thread_local! {
+    static INJECT_COMMIT_FAILURE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
 
 pub(super) fn copy_dir_clean(source: &Path, destination: &Path) -> Result<(), String> {
     verify_disjoint_directories(source, destination)?;
@@ -16,8 +24,68 @@ fn copy_dir_clean_with_sequence(
     sequence: u64,
 ) -> Result<(), String> {
     let staging = replacement_path(destination, "incoming", sequence);
-    let backup = replacement_path(destination, "replaced", sequence);
+    create_staging_directory(&staging)?;
+    if let Err(error) = copy_dir_contents(source, &staging) {
+        remove_directory_if_present(&staging)?;
+        return Err(error);
+    }
 
+    commit_staged_directory_with_sequence(&staging, destination, sequence)
+}
+
+pub(super) fn stage_directory(destination: &Path) -> Result<PathBuf, String> {
+    let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let staging = replacement_path(destination, "incoming", sequence);
+    create_staging_directory(&staging)?;
+    Ok(staging)
+}
+
+pub(super) fn discard_staged_directory(staging: &Path) -> Result<(), String> {
+    remove_directory_if_present(staging)
+}
+
+pub(super) fn commit_staged_directory(staging: &Path, destination: &Path) -> Result<(), String> {
+    let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    commit_staged_directory_with_sequence(staging, destination, sequence)
+}
+
+fn commit_staged_directory_with_sequence(
+    staging: &Path,
+    destination: &Path,
+    sequence: u64,
+) -> Result<(), String> {
+    let backup = replacement_path(destination, "replaced", sequence);
+    if destination.exists() {
+        fs::rename(destination, &backup).map_err(|err| {
+            format!(
+                "failed to stage existing directory {} for replacement: {err}",
+                destination.display()
+            )
+        })?;
+    }
+
+    #[cfg(test)]
+    if should_inject_commit_failure(destination) {
+        restore_replaced_directory(&backup, destination)?;
+        return Err(format!(
+            "injected failure before installing replacement directory {}",
+            destination.display()
+        ));
+    }
+
+    if let Err(error) = fs::rename(staging, destination) {
+        if backup.exists() {
+            restore_replaced_directory(&backup, destination)?;
+        }
+        return Err(format!(
+            "failed to install replacement directory {}: {error}",
+            destination.display()
+        ));
+    }
+    remove_directory_if_present(&backup)
+}
+
+fn create_staging_directory(staging: &Path) -> Result<(), String> {
     let parent = staging
         .parent()
         .ok_or_else(|| format!("replacement directory has no parent: {}", staging.display()))?;
@@ -27,40 +95,44 @@ fn copy_dir_clean_with_sequence(
             parent.display()
         )
     })?;
-    fs::create_dir(&staging).map_err(|error| {
+    fs::create_dir(staging).map_err(|error| {
         format!(
             "failed to reserve replacement directory {}: {error}",
             staging.display()
         )
-    })?;
-    if let Err(error) = copy_dir_contents(source, &staging) {
-        remove_directory_if_present(&staging)?;
-        return Err(error);
-    }
+    })
+}
 
-    if destination.exists() {
-        fs::rename(destination, &backup).map_err(|err| {
-            format!(
-                "failed to stage existing directory {} for replacement: {err}",
-                destination.display()
-            )
-        })?;
-    }
-    if let Err(error) = fs::rename(&staging, destination) {
-        if backup.exists() {
-            fs::rename(&backup, destination).map_err(|rollback_error| {
-                format!(
-                    "failed to restore {} after replacement failed: {rollback_error}",
-                    destination.display()
-                )
-            })?;
-        }
-        return Err(format!(
-            "failed to install replacement directory {}: {error}",
+fn restore_replaced_directory(backup: &Path, destination: &Path) -> Result<(), String> {
+    fs::rename(backup, destination).map_err(|rollback_error| {
+        format!(
+            "failed to restore {} after replacement failed: {rollback_error}",
             destination.display()
-        ));
-    }
-    remove_directory_if_present(&backup)
+        )
+    })
+}
+
+#[cfg(test)]
+pub(super) fn inject_commit_failure(destination: &Path) {
+    INJECT_COMMIT_FAILURE.with(|failure| {
+        *failure.borrow_mut() = Some(destination.to_path_buf());
+    });
+}
+
+#[cfg(test)]
+fn should_inject_commit_failure(destination: &Path) -> bool {
+    INJECT_COMMIT_FAILURE.with(|failure| {
+        let mut failure = failure.borrow_mut();
+        if failure
+            .as_ref()
+            .is_some_and(|expected| expected == destination)
+        {
+            failure.take();
+            true
+        } else {
+            false
+        }
+    })
 }
 
 fn verify_disjoint_directories(source: &Path, destination: &Path) -> Result<(), String> {
