@@ -116,6 +116,7 @@ pub(super) fn fetch_to_cache(
     let (name, version) = exact_identity(package_id)?;
     let registry = registry_root(explicit_registry)?;
     let source = registry.join(&name).join(&version);
+    verify_registry_package_path(&registry, &source)?;
     let source_manifest = source.join(manifest::MANIFEST_FILE);
     if !source_manifest.is_file() {
         return Err(format!(
@@ -138,6 +139,29 @@ pub(super) fn fetch_to_cache(
         .join(&version);
     fs_util::copy_dir_clean(&source, &destination)?;
     Ok(destination)
+}
+
+fn verify_registry_package_path(registry: &Path, package: &Path) -> Result<(), String> {
+    let registry = registry.canonicalize().map_err(|error| {
+        format!(
+            "failed to resolve local registry {}: {error}",
+            registry.display()
+        )
+    })?;
+    let package = package.canonicalize().map_err(|error| {
+        format!(
+            "failed to resolve local registry package {}: {error}",
+            package.display()
+        )
+    })?;
+    if !package.starts_with(&registry) {
+        return Err(format!(
+            "local registry package {} resolves outside registry {}",
+            package.display(),
+            registry.display()
+        ));
+    }
+    Ok(())
 }
 
 fn exact_identity(package_id: &str) -> Result<(String, String), String> {
