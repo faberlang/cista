@@ -1,7 +1,12 @@
 use crate::cli::{PackageCommand, PackageSubcommand};
 use crate::store;
+use std::path::{Component, Path};
 
 use super::CommandResult;
+
+#[cfg(test)]
+#[path = "package_test.rs"]
+mod tests;
 
 pub fn run(args: PackageCommand) -> CommandResult {
     match args.command {
@@ -70,12 +75,16 @@ fn interfaces(package_id: &str, store: Option<&std::path::Path>) -> CommandResul
     let package = store::find_installed(&store_root, package_id).map_err(|err| vec![err])?;
     let files = store::list_package_files(&package.package_root).map_err(|err| vec![err])?;
     for file in files {
-        let as_str = file.to_string_lossy();
-        if as_str.starts_with("interfaces/") && as_str.ends_with(".fab") {
-            println!("{as_str}");
+        if is_interface_file(&file) {
+            println!("{}", file.display());
         }
     }
     Ok(())
+}
+
+fn is_interface_file(path: &Path) -> bool {
+    matches!(path.components().next(), Some(Component::Normal(root)) if root == "interfaces")
+        && path.extension().is_some_and(|extension| extension == "fab")
 }
 
 fn runtimes(package_id: &str, store: Option<&std::path::Path>) -> CommandResult {
