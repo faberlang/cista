@@ -110,7 +110,7 @@ fn utf8_directory_name(path: &Path, kind: &str) -> Result<String, String> {
 pub fn find_installed(store_root: &Path, package_id: &str) -> Result<InstalledPackage, String> {
     let (name, version) = split_package_id(package_id);
     let installed = list_installed(store_root)?;
-    let matches: Vec<_> = installed
+    let mut matches: Vec<_> = installed
         .into_iter()
         .filter(|pkg| pkg.name == name)
         .collect();
@@ -132,7 +132,12 @@ pub fn find_installed(store_root: &Path, package_id: &str) -> Result<InstalledPa
             });
     }
     if matches.len() == 1 {
-        return Ok(matches.into_iter().next().expect("len checked"));
+        return matches.pop().ok_or_else(|| {
+            format!(
+                "package `{name}` is not installed in store {}",
+                store_root.display()
+            )
+        });
     }
     let versions = matches
         .iter()
@@ -180,9 +185,14 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
         if file_type.is_dir() {
             collect_files(root, &path, out)?;
         } else if file_type.is_file() {
-            if let Ok(relative) = path.strip_prefix(root) {
-                out.push(relative.to_path_buf());
-            }
+            let relative = path.strip_prefix(root).map_err(|err| {
+                format!(
+                    "failed to make package file {} relative to {}: {err}",
+                    path.display(),
+                    root.display()
+                )
+            })?;
+            out.push(relative.to_path_buf());
         } else {
             return Err(format!(
                 "installed package contains unsupported entry {}",
