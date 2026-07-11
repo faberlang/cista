@@ -51,3 +51,36 @@ fn manifest_shape_rejects_artifact_kind_with_compile_mode() {
     assert!(diagnostics.iter().any(|diagnostic| diagnostic
         == "source.kind `artifact` is incompatible with target.mode `compile`"));
 }
+
+#[test]
+fn manifest_shape_rejects_artifact_field_for_compile_mode() {
+    let mut diagnostics = Vec::new();
+    validate_manifest_shape(
+        &manifest(SourceKind::Source, TargetMode::Compile),
+        &mut diagnostics,
+    );
+
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic == "target mode `compile` forbids target.artifact"));
+}
+
+#[test]
+fn manifest_shape_rejects_compile_fields_for_artifact_mode() {
+    let mut manifest = manifest(SourceKind::Artifact, TargetMode::Artifact);
+    manifest.target.source = Some(PathBuf::from("target"));
+    manifest.target.compile = Some(crate::manifest::CompileSection {
+        emit: "library".to_owned(),
+        crate_type: "rlib".to_owned(),
+        edition: "2021".to_owned(),
+    });
+    let mut diagnostics = Vec::new();
+    validate_manifest_shape(&manifest, &mut diagnostics);
+
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic == "target mode `artifact` forbids target.source"));
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic == "target mode `artifact` forbids [target.compile]"));
+}

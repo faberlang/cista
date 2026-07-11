@@ -88,6 +88,9 @@ fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<Strin
 
     match manifest.target.mode {
         TargetMode::Compile => {
+            if manifest.target.artifact.is_some() {
+                diagnostics.push("target mode `compile` forbids target.artifact".to_owned());
+            }
             // Pure Faber packages (`binding_policy = generated`) may ship
             // interfaces only — no native target.source / [target.compile].
             // Hand-written native targets still require both fields.
@@ -104,6 +107,12 @@ fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<Strin
             }
         }
         TargetMode::Artifact => {
+            if manifest.target.source.is_some() {
+                diagnostics.push("target mode `artifact` forbids target.source".to_owned());
+            }
+            if manifest.target.compile.is_some() {
+                diagnostics.push("target mode `artifact` forbids [target.compile]".to_owned());
+            }
             if manifest.target.artifact.is_none() {
                 diagnostics.push("target mode `artifact` requires target.artifact".to_owned());
             }
