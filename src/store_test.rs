@@ -40,6 +40,42 @@ fn package_file_listing_rejects_symlinks() {
     fs::remove_dir_all(root).expect("temporary directory should be removed");
 }
 
+#[cfg(unix)]
+#[test]
+fn package_file_listing_rejects_special_entries() {
+    use std::os::unix::net::UnixListener;
+
+    let root = std::path::PathBuf::from(format!("/tmp/cista-socket-{}", std::process::id()));
+    fs::create_dir_all(&root).expect("temporary directory should be created");
+    let socket_path = root.join("package.sock");
+    let _listener = UnixListener::bind(&socket_path).expect("fixture socket should be created");
+
+    let error = list_package_files(&root).expect_err("special entry should fail closed");
+
+    assert!(error.contains("unsupported entry"), "{error}");
+    fs::remove_dir_all(root).expect("temporary directory should be removed");
+}
+
+#[cfg(unix)]
+#[test]
+fn target_manifest_discovery_rejects_special_entries() {
+    use std::os::unix::net::UnixListener;
+
+    let root =
+        std::path::PathBuf::from(format!("/tmp/cista-manifest-socket-{}", std::process::id()));
+    fs::create_dir_all(&root).expect("temporary directory should be created");
+    let targets = root.join("targets");
+    fs::create_dir_all(&targets).expect("target directory should be created");
+    let socket_path = targets.join("package.sock");
+    let _listener = UnixListener::bind(&socket_path).expect("fixture socket should be created");
+
+    let error = read_any_target_manifest(&installed_package(&root))
+        .expect_err("special entry should fail closed");
+
+    assert!(error.contains("unsupported entry"), "{error}");
+    fs::remove_dir_all(root).expect("temporary directory should be removed");
+}
+
 #[test]
 fn malformed_target_manifest_is_reported() {
     let root = temporary_dir("manifest");
