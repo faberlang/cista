@@ -63,13 +63,7 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
         {
             continue;
         }
-        let Some(name) = package_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(str::to_owned)
-        else {
-            continue;
-        };
+        let name = utf8_directory_name(&package_path, "package")?;
         let version_entries = fs::read_dir(&package_path).map_err(|err| {
             format!(
                 "failed to read package directory {}: {err}",
@@ -91,13 +85,7 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
             {
                 continue;
             }
-            let Some(version) = version_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(str::to_owned)
-            else {
-                continue;
-            };
+            let version = utf8_directory_name(&version_path, "version")?;
             packages.push(InstalledPackage {
                 name: name.clone(),
                 version,
@@ -109,6 +97,13 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
     }
     packages.sort_by(|a, b| a.name.cmp(&b.name).then(a.version.cmp(&b.version)));
     Ok(packages)
+}
+
+fn utf8_directory_name(path: &Path, kind: &str) -> Result<String, String> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_owned)
+        .ok_or_else(|| format!("{kind} directory name is not UTF-8: {}", path.display()))
 }
 
 /// Resolve `name` or `name@version` in the store.
