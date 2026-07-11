@@ -40,6 +40,24 @@ fn rejects_credentials_over_plain_http() {
 }
 
 #[test]
+fn rejects_non_origin_registry_urls() {
+    for base_url in [
+        "https://user@cista.dev",
+        "https://cista.dev/api",
+        "https://cista.dev?mirror=other",
+        "https://cista.dev/",
+    ] {
+        let error = RegistryHttpClient::with_transport(
+            base_url,
+            None,
+            Box::new(HermeticRegistry::default()),
+        )
+        .expect_err("registry URL must be a bare origin");
+        assert!(error.contains("bare HTTP(S) origin"), "{base_url}: {error}");
+    }
+}
+
+#[test]
 fn authenticated_publish_fetch_round_trip_is_immutable() {
     let registry = HermeticRegistry::default();
     let client =

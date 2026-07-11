@@ -77,11 +77,26 @@ impl RegistryHttpClient {
         bearer_token: Option<&str>,
         transport: Box<dyn Transport>,
     ) -> Result<Self, String> {
-        let base_url = base_url.trim_end_matches('/');
-        if !(base_url.starts_with("https://") || base_url.starts_with("http://")) {
-            return Err("registry URL must use http:// or https://".to_owned());
+        let uri: ureq::http::Uri = base_url
+            .parse()
+            .map_err(|_| "registry URL must be a valid HTTP(S) origin".to_owned())?;
+        let scheme = uri.scheme_str();
+        let valid_authority = uri
+            .authority()
+            .is_some_and(|authority| !authority.as_str().contains('@'));
+        if !matches!(scheme, Some("http" | "https"))
+            || !valid_authority
+            || uri
+                .path_and_query()
+                .is_some_and(|value| value.as_str() != "/")
+            || base_url.ends_with('/')
+        {
+            return Err(
+                "registry URL must be a bare HTTP(S) origin without userinfo, path, query, or trailing slash"
+                    .to_owned(),
+            );
         }
-        if base_url.starts_with("http://") && bearer_token.is_some() {
+        if scheme == Some("http") && bearer_token.is_some() {
             return Err("refusing to send registry credentials over insecure HTTP".to_owned());
         }
         if bearer_token.is_some_and(|token| token.trim().is_empty()) {
