@@ -185,9 +185,14 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
         if file_type.is_dir() {
             collect_files(root, &path, out)?;
         } else if file_type.is_file() {
-            if let Ok(relative) = path.strip_prefix(root) {
-                out.push(relative.to_path_buf());
-            }
+            let relative = path.strip_prefix(root).map_err(|err| {
+                format!(
+                    "failed to make package file {} relative to {}: {err}",
+                    path.display(),
+                    root.display()
+                )
+            })?;
+            out.push(relative.to_path_buf());
         } else {
             return Err(format!(
                 "installed package contains unsupported entry {}",
