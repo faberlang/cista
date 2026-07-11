@@ -32,6 +32,22 @@ fn archive_round_trip_preserves_package_tree() {
     fs::remove_dir_all(root).unwrap();
 }
 
+#[cfg(unix)]
+#[test]
+fn remote_archive_rejects_package_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let root = temp_root().join("remote-archive-symlink");
+    fs::create_dir_all(&root).expect("create package root");
+    fs::write(root.join("payload"), "inside").expect("write package payload");
+    symlink("payload", root.join("alias")).expect("create package symlink");
+
+    let error = archive_directory(&root).expect_err("package symlink should fail closed");
+
+    assert!(error.contains("unsupported symlink"), "{error}");
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
 #[test]
 fn invalid_remote_archive_preserves_cached_package() {
     let root = temp_root().join("invalid-remote-archive");

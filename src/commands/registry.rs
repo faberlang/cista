@@ -267,9 +267,16 @@ fn authenticated_client(origin: &str) -> Result<RegistryHttpClient, String> {
 
 fn archive_directory(root: &Path) -> Result<Vec<u8>, String> {
     let mut archive = tar::Builder::new(Vec::new());
-    archive
-        .append_dir_all(".", root)
-        .map_err(|error| format!("failed to archive package {}: {error}", root.display()))?;
+    for relative in store::list_package_files(root)? {
+        archive
+            .append_path_with_name(root.join(&relative), &relative)
+            .map_err(|error| {
+                format!(
+                    "failed to archive package file {}: {error}",
+                    relative.display()
+                )
+            })?;
+    }
     archive
         .into_inner()
         .map_err(|error| format!("failed to finish package archive: {error}"))
