@@ -870,6 +870,36 @@ transport against the fixed cista.dev API without weakening local/dev behavior.
 CLI route selection, credential isolation, and staged cache extraction. A live
 host smoke test remains environment-gated evidence, not a local fake.
 
+#### Post-Phase-G gated live proof
+
+This is a bounded integration residual, not an unbounded Phase H. Run it only
+when an operator provides all of the following:
+
+- `CISTA_LIVE_REGISTRY=1` as explicit authorization to contact the live host;
+- `CISTA_LIVE_REGISTRY_URL`, which must be a bare HTTPS origin;
+- `CISTA_REGISTRY_TOKEN`, scoped to a disposable publisher identity;
+- `CISTA_LIVE_PACKAGE_PATH`, containing a valid package with a unique,
+  disposable version that has never been published.
+
+Use isolated `HOME` and `CISTAE_HOME` directories so the proof cannot consume
+or overwrite developer credentials and caches. The proof sequence is:
+
+1. `cista login --registry-url "$CISTA_LIVE_REGISTRY_URL"`;
+2. `cista publish --path "$CISTA_LIVE_PACKAGE_PATH" --registry-url "$CISTA_LIVE_REGISTRY_URL"`;
+3. remove only the isolated cache, then run `cista fetch <name>@<version> --registry-url "$CISTA_LIVE_REGISTRY_URL"`;
+4. compare the fetched manifest and package file inventory with the source;
+5. repeat publish and require an immutable-version conflict;
+6. `cista logout --registry-url "$CISTA_LIVE_REGISTRY_URL"`, then require an
+   authenticated fetch to fail closed.
+
+**Evidence bar:** record host origin, disposable package identity, CLI commit,
+HTTP outcome classes without token/header values, inventory comparison, and
+isolated-directory cleanup. A pass proves client/server archive compatibility
+for that deployed host version only. TLS failure, auth rejection, archive shape
+mismatch, or unavailable credentials leave this residual open; they must not be
+converted into a hermetic green result. Do not run publish against a shared or
+meaningful package identity, and do not add automatic retries around publish.
+
 ### Explicitly not in A–D
 
 - Static site / web application packaging.
