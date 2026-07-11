@@ -123,6 +123,13 @@ pub(super) fn fetch_to_cache(
             registry.display()
         ));
     }
+    let manifest = manifest::read_manifest(&source_manifest)?;
+    if manifest.source.package != name || manifest.source.version != version {
+        return Err(format!(
+            "registry package `{name}@{version}` declares `{}@{}`",
+            manifest.source.package, manifest.source.version
+        ));
+    }
     let store_root = store::store_root(explicit_store)?;
     let destination = store_root
         .join(".cache")

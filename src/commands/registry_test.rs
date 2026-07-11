@@ -93,6 +93,46 @@ binding_policy = "generated"
 }
 
 #[test]
+fn mismatched_local_registry_package_preserves_cached_package() {
+    let root = temp_root().join("mismatched-local-package");
+    let registry_package = root.join("registry/tool/1.2.3");
+    let cached_package = root.join("store/.cache/registry/tool/1.2.3");
+    fs::create_dir_all(&registry_package).expect("create registry package");
+    fs::create_dir_all(&cached_package).expect("create cached package");
+    fs::write(
+        registry_package.join("cista.toml"),
+        r#"[source]
+package = "other"
+version = "9.9.9"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#,
+    )
+    .expect("write mismatched manifest");
+    fs::write(cached_package.join("payload"), "last good package").expect("seed cache");
+
+    let error = fetch_to_cache(
+        "tool@1.2.3",
+        Some(&root.join("registry")),
+        Some(&root.join("store")),
+    )
+    .expect_err("mismatched identity should fail closed");
+
+    assert!(error.contains("declares `other@9.9.9`"));
+    assert_eq!(
+        fs::read_to_string(cached_package.join("payload")).expect("read preserved cache"),
+        "last good package"
+    );
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn cli_routes_remote_registry_without_accepting_local_registry_too() {
     let cli = CistaCli::try_parse_from([
         "cista",
