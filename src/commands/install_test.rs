@@ -13,6 +13,16 @@ fn temp_root(name: &str) -> PathBuf {
     path
 }
 
+fn faberlang_workspace() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .find(|root| {
+            root.join("faber/Cargo.toml").is_file() && root.join("norma/cista.toml").is_file()
+        })
+        .expect("faberlang workspace containing faber and norma")
+        .to_path_buf()
+}
+
 #[test]
 fn install_norma_platform_default_snapshots_src_interfaces_without_artifact() {
     let root = temp_root("norma-platform-default");
@@ -307,10 +317,7 @@ fn install_real_norma_platform_default_builds_nested_import_without_dependency()
     let store = root.join("store");
     let project = root.join("app");
     let fake_library_home = root.join("fake-library-home");
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("faberlang workspace")
-        .to_path_buf();
+    let workspace = faberlang_workspace();
     let norma = workspace.join("norma");
     let faber_manifest = workspace.join("faber/Cargo.toml");
 
