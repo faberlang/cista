@@ -1,6 +1,6 @@
 # Goal: Cista Package Store Model
 
-**Status**: active — Phases A–F local/dev loop closed; next: cista.dev HTTP/auth transport
+**Status**: Phase G hermetic HTTP/auth client closed; live cista.dev validation environment-gated
 **Created**: 2026-06-21
 **Updated**: 2026-07-10
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
@@ -825,6 +825,50 @@ remain residual work rather than a fabricated protocol. See
   slice.
 
 **Exit:** install a published lib or bin without `--path`.
+
+### Phase G — cista.dev HTTP/auth transport
+
+**Active 2026-07-10:** establish the remote client transport independently of
+the filesystem registry. The first slice provides an HTTP(S) client contract,
+optional bearer authentication, strict success-status handling, and local
+loopback contract tests. Credentials fail closed over plain HTTP. Live
+`cista.dev` validation remains environment-gated and is not claimed here.
+
+**Authenticated round-trip slice closed 2026-07-10:** exact package archive
+PUT/GET requests now share the HTTPS transport and canonical package identity
+validation. A hermetic registry proves bearer authorization, immutable publish,
+fetch, unauthorized rejection, and path-escape rejection without weakening the
+plain-HTTP credential prohibition. This is client-contract evidence, not a live
+cista.dev product run.
+
+**Credential CLI slice closed 2026-07-10:** `cista login` reads a bearer token
+from an explicitly named environment variable and stores it by bare HTTPS
+origin; `cista logout` removes only that origin. The owner-only TOML file is
+written atomically, rejects loose Unix permissions, and never accepts token
+values on the command line. Hermetic tests cover replacement, origin isolation,
+removal, URL rejection, and file mode. No live cista.dev result is claimed.
+
+**Remote CLI routing closed 2026-07-10:** `fetch` and `publish` accept an
+explicit `--registry-url` that conflicts with the filesystem `--registry`
+route, load only the matching HTTPS-origin credential, and transfer a package
+tar archive through the authenticated client. Fetch validates a staged archive
+before replacing the cache. Hermetic archive, routing, authentication, and
+failure tests pass. Live cista.dev remains an environment-gated integration
+proof and is not claimed by this closeout.
+
+- Remote API paths are origin-relative and must begin with exactly one `/`.
+- Authenticated requests use `Authorization: Bearer <token>` only over HTTPS.
+- Transport errors and non-success responses are terminal; remote operations
+  must not silently fall back to the local filesystem registry.
+- Server evolution must retain the fail-closed and immutable package semantics
+  proved by the hermetic client contract.
+
+**Exit:** a CLI fetch/publish operation can use the authenticated remote
+transport against the fixed cista.dev API without weakening local/dev behavior.
+
+**Exit evidence:** satisfied hermetically by authenticated archive round trips,
+CLI route selection, credential isolation, and staged cache extraction. A live
+host smoke test remains environment-gated evidence, not a local fake.
 
 ### Explicitly not in A–D
 

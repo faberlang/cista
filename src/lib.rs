@@ -7,11 +7,13 @@
 pub mod cache;
 pub mod cli;
 pub mod commands;
+pub mod credentials;
 pub mod diagnostics;
 pub mod faber_lock;
 pub mod manifest;
 pub mod package;
 pub mod project_manifest;
+pub mod registry_http;
 pub mod resolver;
 pub mod runtime;
 pub mod store;

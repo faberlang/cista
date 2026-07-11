@@ -1,4 +1,6 @@
 use super::*;
+use crate::cli::{CistaCli, CistaCommand};
+use clap::Parser;
 use std::fs;
 
 fn temp_root() -> PathBuf {
@@ -7,6 +9,53 @@ fn temp_root() -> PathBuf {
         .expect("clock after epoch")
         .as_nanos();
     std::env::temp_dir().join(format!("cista-registry-{}-{nanos}", std::process::id()))
+}
+
+#[test]
+fn archive_round_trip_preserves_package_tree() {
+    let root = temp_root();
+    let source = root.join("source");
+    let destination = root.join("destination");
+    fs::create_dir_all(source.join("interfaces")).unwrap();
+    fs::write(source.join("cista.toml"), "[source]\npackage = \"tool\"\n").unwrap();
+    fs::write(
+        source.join("interfaces/tool.fab"),
+        "functio main() → nihil\n",
+    )
+    .unwrap();
+
+    let archive = archive_directory(&source).unwrap();
+    fs::create_dir_all(&destination).unwrap();
+    unpack_archive(&archive, &destination).unwrap();
+    assert!(destination.join("cista.toml").is_file());
+    assert!(destination.join("interfaces/tool.fab").is_file());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn cli_routes_remote_registry_without_accepting_local_registry_too() {
+    let cli = CistaCli::try_parse_from([
+        "cista",
+        "fetch",
+        "tool@1.2.3",
+        "--registry-url",
+        "https://cista.dev",
+    ])
+    .unwrap();
+    let CistaCommand::Fetch(args) = cli.command else {
+        panic!("expected fetch command");
+    };
+    assert_eq!(args.registry_url.as_deref(), Some("https://cista.dev"));
+    assert!(CistaCli::try_parse_from([
+        "cista",
+        "fetch",
+        "tool@1.2.3",
+        "--registry-url",
+        "https://cista.dev",
+        "--registry",
+        "/tmp/registry",
+    ])
+    .is_err());
 }
 
 #[test]

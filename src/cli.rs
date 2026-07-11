@@ -72,13 +72,34 @@ pub enum CistaCommand {
     Yank(YankArg),
 
     /// Authenticate to a package registry
-    Login,
+    Login(RegistryAuthArgs),
 
     /// Remove package registry credentials
-    Logout,
+    Logout(RegistryOriginArg),
 
     /// Run package-store health checks
     Doctor,
+}
+
+/// Registry authentication arguments. Tokens are read from the environment,
+/// never from command-line values.
+#[derive(Args, Debug)]
+pub struct RegistryAuthArgs {
+    /// HTTPS registry origin
+    #[arg(long, default_value = "https://cista.dev")]
+    pub registry_url: String,
+
+    /// Environment variable containing the bearer token
+    #[arg(long, default_value = "CISTA_REGISTRY_TOKEN")]
+    pub token_env: String,
+}
+
+/// Registry origin selection for credential removal.
+#[derive(Args, Debug)]
+pub struct RegistryOriginArg {
+    /// HTTPS registry origin
+    #[arg(long, default_value = "https://cista.dev")]
+    pub registry_url: String,
 }
 
 /// Cache subcommands.
@@ -246,6 +267,10 @@ pub struct PublishArgs {
     /// Local/dev registry root; falls back to CISTA_REGISTRY
     #[arg(long)]
     pub registry: Option<PathBuf>,
+
+    /// Remote HTTPS registry origin; mutually exclusive with --registry
+    #[arg(long, conflicts_with = "registry")]
+    pub registry_url: Option<String>,
 }
 
 /// Installed binary execution arguments.
@@ -276,6 +301,10 @@ pub struct PackageArg {
     /// Local/dev registry root; falls back to CISTA_REGISTRY
     #[arg(long)]
     pub registry: Option<PathBuf>,
+
+    /// Remote HTTPS registry origin; mutually exclusive with --registry
+    #[arg(long, conflicts_with = "registry")]
+    pub registry_url: Option<String>,
 }
 
 /// Optional package identifier argument.

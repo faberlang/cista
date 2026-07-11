@@ -1,7 +1,16 @@
-use crate::cli::CistaCommand;
+use crate::cli::RegistryOriginArg;
+use crate::credentials;
 
-use super::{staged, CommandResult};
+use super::CommandResult;
 
-pub fn run() -> CommandResult {
-    staged::run(CistaCommand::Logout)
+pub fn run(args: RegistryOriginArg) -> CommandResult {
+    let path = credentials::default_path().map_err(|error| vec![error])?;
+    if !credentials::remove(&path, &args.registry_url).map_err(|error| vec![error])? {
+        return Err(vec![format!(
+            "no registry credentials stored for {}",
+            args.registry_url
+        )]);
+    }
+    println!("logged out: {}", args.registry_url);
+    Ok(())
 }

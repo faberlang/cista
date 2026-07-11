@@ -1,0 +1,172 @@
+//! Registry bearer credential persistence.
+
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct CredentialFile {
+    registry: Vec<Credential>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Credential {
+    origin: String,
+    token: String,
+}
+
+pub fn default_path() -> Result<PathBuf, String> {
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| "HOME is unavailable; cannot locate registry credentials".to_owned())?;
+    Ok(PathBuf::from(home).join(".faber").join("credentials.toml"))
+}
+
+pub fn store(path: &Path, origin: &str, token: &str) -> Result<(), String> {
+    validate(origin, token)?;
+    let mut credentials = read(path)?;
+    credentials.registry.retain(|entry| entry.origin != origin);
+    credentials.registry.push(Credential {
+        origin: origin.to_owned(),
+        token: token.to_owned(),
+    });
+    write(path, &credentials)
+}
+
+pub fn remove(path: &Path, origin: &str) -> Result<bool, String> {
+    validate_origin(origin)?;
+    let mut credentials = read(path)?;
+    let previous_len = credentials.registry.len();
+    credentials.registry.retain(|entry| entry.origin != origin);
+    if credentials.registry.len() == previous_len {
+        return Ok(false);
+    }
+    write(path, &credentials)?;
+    Ok(true)
+}
+
+pub fn token(path: &Path, origin: &str) -> Result<Option<String>, String> {
+    validate_origin(origin)?;
+    Ok(read(path)?
+        .registry
+        .into_iter()
+        .find(|entry| entry.origin == origin)
+        .map(|entry| entry.token))
+}
+
+fn validate(origin: &str, token: &str) -> Result<(), String> {
+    validate_origin(origin)?;
+    if token.trim().is_empty() {
+        return Err("registry bearer token must not be empty".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_origin(origin: &str) -> Result<(), String> {
+    let uri: ureq::http::Uri = origin
+        .parse()
+        .map_err(|_| "registry credential origin must be a valid HTTPS origin".to_owned())?;
+    let valid_authority = uri
+        .authority()
+        .is_some_and(|authority| !authority.as_str().contains('@'));
+    if uri.scheme_str() != Some("https")
+        || !valid_authority
+        || uri
+            .path_and_query()
+            .is_some_and(|value| value.as_str() != "/")
+        || origin.ends_with('/')
+    {
+        return Err(
+            "registry credential origin must be a bare HTTPS origin without userinfo, path, query, or trailing slash"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn read(path: &Path) -> Result<CredentialFile, String> {
+    if !path.exists() {
+        return Ok(CredentialFile::default());
+    }
+    verify_permissions(path)?;
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("failed to read credentials {}: {error}", path.display()))?;
+    toml::from_str(&contents)
+        .map_err(|error| format!("failed to parse credentials {}: {error}", path.display()))
+}
+
+#[cfg(unix)]
+fn verify_permissions(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = fs::metadata(path)
+        .map_err(|error| format!("failed to inspect credentials {}: {error}", path.display()))?
+        .permissions()
+        .mode();
+    if mode & 0o077 != 0 {
+        return Err(format!(
+            "credentials {} must not be accessible by group or other users",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn verify_permissions(_path: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+fn write(path: &Path, credentials: &CredentialFile) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("credential path {} has no parent", path.display()))?;
+    fs::create_dir_all(parent).map_err(|error| {
+        format!(
+            "failed to create credential directory {}: {error}",
+            parent.display()
+        )
+    })?;
+    let contents = toml::to_string(credentials)
+        .map_err(|error| format!("failed to encode registry credentials: {error}"))?;
+    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
+    let mut file = secure_create(&temporary)?;
+    file.write_all(contents.as_bytes())
+        .and_then(|_| file.sync_all())
+        .map_err(|error| {
+            format!(
+                "failed to write credentials {}: {error}",
+                temporary.display()
+            )
+        })?;
+    fs::rename(&temporary, path).map_err(|error| {
+        format!(
+            "failed to replace credentials {} with {}: {error}",
+            path.display(),
+            temporary.display()
+        )
+    })
+}
+
+#[cfg(unix)]
+fn secure_create(path: &Path) -> Result<fs::File, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|error| format!("failed to create credentials {}: {error}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn secure_create(path: &Path) -> Result<fs::File, String> {
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| format!("failed to create credentials {}: {error}", path.display()))
+}
+
+#[cfg(test)]
+#[path = "credentials_test.rs"]
+mod tests;

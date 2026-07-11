@@ -38,6 +38,10 @@ use crate::cli::{CistaCli, CistaCommand};
 /// Outcome of one `cista` command invocation.
 pub type CommandResult = Result<(), Vec<String>>;
 
+pub(crate) fn validate_package_identity(package: &str, version: &str) -> Result<(), Vec<String>> {
+    shared::validate_identity(package, version)
+}
+
 /// Run a parsed `cista` command.
 pub fn run(cli: CistaCli) {
     let result = match cli.command {
@@ -58,8 +62,8 @@ pub fn run(cli: CistaCli) {
         CistaCommand::Target(args) => target::run(args),
         CistaCommand::Publish(args) => publish::run(args),
         CistaCommand::Yank(args) => yank::run(args),
-        CistaCommand::Login => login::run(),
-        CistaCommand::Logout => logout::run(),
+        CistaCommand::Login(args) => login::run(args),
+        CistaCommand::Logout(args) => logout::run(args),
         CistaCommand::Doctor => doctor::run(),
     };
 
