@@ -62,7 +62,16 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<(), String> {
                     destination_path.display()
                 )
             })?;
+        } else {
+            return Err(format!(
+                "unsupported package entry {}",
+                entry.path().display()
+            ));
         }
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "fs_util_test.rs"]
+mod tests;
