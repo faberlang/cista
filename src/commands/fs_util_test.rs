@@ -58,3 +58,44 @@ fn package_copy_preserves_regular_files() {
     );
     fs::remove_dir_all(root).expect("remove fixture");
 }
+
+#[test]
+fn package_copy_rejects_destination_inside_source() {
+    let root = std::env::temp_dir().join(format!(
+        "cista-fs-util-destination-overlap-{}",
+        std::process::id()
+    ));
+    let source = root.join("source");
+    let destination = source.join("nested/cache");
+    fs::create_dir_all(&source).expect("create source");
+    fs::write(source.join("payload"), "source").expect("write source payload");
+
+    let error = copy_dir_clean(&source, &destination)
+        .expect_err("destination inside source should fail closed");
+
+    assert!(error.contains("must not overlap"), "{error}");
+    assert!(!destination.exists());
+    fs::remove_dir_all(root).expect("remove fixture");
+}
+
+#[test]
+fn package_copy_rejects_source_inside_destination() {
+    let root = std::env::temp_dir().join(format!(
+        "cista-fs-util-source-overlap-{}",
+        std::process::id()
+    ));
+    let destination = root.join("destination");
+    let source = destination.join("registry/package");
+    fs::create_dir_all(&source).expect("create source");
+    fs::write(source.join("payload"), "source").expect("write source payload");
+
+    let error = copy_dir_clean(&source, &destination)
+        .expect_err("source inside destination should fail closed");
+
+    assert!(error.contains("must not overlap"), "{error}");
+    assert_eq!(
+        fs::read_to_string(source.join("payload")).expect("read preserved source"),
+        "source"
+    );
+    fs::remove_dir_all(root).expect("remove fixture");
+}

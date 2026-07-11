@@ -283,9 +283,35 @@ fn archive_directory(root: &Path) -> Result<Vec<u8>, String> {
 }
 
 fn unpack_archive(bytes: &[u8], destination: &Path) -> Result<(), String> {
-    tar::Archive::new(bytes)
-        .unpack(destination)
-        .map_err(|error| format!("failed to unpack remote package archive: {error}"))
+    let mut archive = tar::Archive::new(bytes);
+    let entries = archive
+        .entries()
+        .map_err(|error| format!("failed to read remote package archive: {error}"))?;
+    for entry in entries {
+        let mut entry = entry
+            .map_err(|error| format!("failed to read remote package archive entry: {error}"))?;
+        let path = entry
+            .path()
+            .map_err(|error| format!("failed to read remote package archive path: {error}"))?
+            .into_owned();
+        let entry_type = entry.header().entry_type();
+        if !entry_type.is_file() && !entry_type.is_dir() {
+            return Err(format!(
+                "remote package archive contains unsupported entry {}",
+                path.display()
+            ));
+        }
+        if !entry
+            .unpack_in(destination)
+            .map_err(|error| format!("failed to unpack remote package archive: {error}"))?
+        {
+            return Err(format!(
+                "remote package archive entry escapes destination: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn registry_root(explicit: Option<&Path>) -> Result<PathBuf, String> {

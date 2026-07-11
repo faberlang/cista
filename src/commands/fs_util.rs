@@ -5,6 +5,7 @@ use super::{fs, Path};
 static REPLACEMENT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) fn copy_dir_clean(source: &Path, destination: &Path) -> Result<(), String> {
+    verify_disjoint_directories(source, destination)?;
     let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let staging = replacement_path(destination, "incoming", sequence);
     let backup = replacement_path(destination, "replaced", sequence);
@@ -37,6 +38,48 @@ pub(super) fn copy_dir_clean(source: &Path, destination: &Path) -> Result<(), St
         ));
     }
     remove_directory_if_present(&backup)
+}
+
+fn verify_disjoint_directories(source: &Path, destination: &Path) -> Result<(), String> {
+    let source = source.canonicalize().map_err(|err| {
+        format!(
+            "failed to resolve source directory {}: {err}",
+            source.display()
+        )
+    })?;
+    let existing_parent = destination
+        .ancestors()
+        .find(|ancestor| ancestor.exists())
+        .ok_or_else(|| {
+            format!(
+                "destination directory has no existing parent: {}",
+                destination.display()
+            )
+        })?;
+    let suffix = destination.strip_prefix(existing_parent).map_err(|err| {
+        format!(
+            "failed to resolve destination directory {} from existing parent {}: {err}",
+            destination.display(),
+            existing_parent.display()
+        )
+    })?;
+    let destination = existing_parent
+        .canonicalize()
+        .map(|parent| parent.join(suffix))
+        .map_err(|err| {
+            format!(
+                "failed to resolve destination parent {}: {err}",
+                existing_parent.display()
+            )
+        })?;
+    if source.starts_with(&destination) || destination.starts_with(&source) {
+        return Err(format!(
+            "source and destination directories must not overlap: {} and {}",
+            source.display(),
+            destination.display()
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn copy_dir_new(source: &Path, destination: &Path) -> Result<(), String> {
