@@ -1,5 +1,5 @@
 use super::*;
-use crate::manifest::{PackageRole, SourceSection, TargetSection};
+use crate::manifest::{Binding, PackageRole, SourceSection, TargetSection};
 
 fn manifest(kind: SourceKind, mode: TargetMode) -> CistaManifest {
     CistaManifest {
@@ -83,4 +83,31 @@ fn manifest_shape_rejects_compile_fields_for_artifact_mode() {
     assert!(diagnostics
         .iter()
         .any(|diagnostic| diagnostic == "target mode `artifact` forbids [target.compile]"));
+}
+
+#[test]
+fn manifest_shape_rejects_bindings_for_generated_policy() {
+    let mut manifest = manifest(SourceKind::Artifact, TargetMode::Artifact);
+    manifest.bindings.push(Binding {
+        source_module: "example".to_owned(),
+        source_symbol: "VALUE".to_owned(),
+        target: "example::VALUE".to_owned(),
+    });
+    let mut diagnostics = Vec::new();
+    validate_manifest_shape(&manifest, &mut diagnostics);
+
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic == "binding policy `generated` forbids [[bindings]] rows"));
+}
+
+#[test]
+fn manifest_shape_requires_bindings_for_manifest_policy() {
+    let mut manifest = manifest(SourceKind::Artifact, TargetMode::Artifact);
+    manifest.target.binding_policy = BindingPolicy::Manifest;
+    let mut diagnostics = Vec::new();
+    validate_manifest_shape(&manifest, &mut diagnostics);
+
+    assert!(diagnostics.iter().any(|diagnostic| diagnostic
+        == "binding policy `manifest` requires at least one [[bindings]] row"));
 }

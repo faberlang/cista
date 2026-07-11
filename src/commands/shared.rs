@@ -119,11 +119,16 @@ fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<Strin
         }
     }
 
-    if matches!(manifest.target.binding_policy, BindingPolicy::Manifest)
-        && manifest.bindings.is_empty()
-    {
-        diagnostics
-            .push("binding policy `manifest` requires at least one [[bindings]] row".to_owned());
+    match manifest.target.binding_policy {
+        BindingPolicy::Generated if !manifest.bindings.is_empty() => {
+            diagnostics.push("binding policy `generated` forbids [[bindings]] rows".to_owned());
+        }
+        BindingPolicy::Manifest if manifest.bindings.is_empty() => {
+            diagnostics.push(
+                "binding policy `manifest` requires at least one [[bindings]] row".to_owned(),
+            );
+        }
+        BindingPolicy::Generated | BindingPolicy::Manifest => {}
     }
 
     for (index, binding) in manifest.bindings.iter().enumerate() {
