@@ -14,7 +14,9 @@ pub fn run(args: PackageOrPathArg) -> CommandResult {
             println!("version: {}", package.version);
             println!("store_root: {}", package.package_root.display());
             println!("interfaces: {}", package.interfaces_dir.display());
-            if let Some((path, manifest)) = store::read_any_target_manifest(&package) {
+            if let Some((path, manifest)) =
+                store::read_any_target_manifest(&package).map_err(|err| vec![err])?
+            {
                 println!("target_manifest: {}", path.display());
                 print_manifest_summary(&manifest);
             }

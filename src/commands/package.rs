@@ -34,7 +34,9 @@ fn show(package_id: &str, store: Option<&std::path::Path>) -> CommandResult {
     println!("root: {}", package.package_root.display());
     println!("interfaces: {}", package.interfaces_dir.display());
     println!("targets: {}", package.targets_dir.display());
-    if let Some((path, manifest)) = store::read_any_target_manifest(&package) {
+    if let Some((path, manifest)) =
+        store::read_any_target_manifest(&package).map_err(|err| vec![err])?
+    {
         println!("target_manifest: {}", path.display());
         println!("target.language: {}", manifest.target.language);
         println!("target.mode: {}", manifest.target.mode.kebab_name());
@@ -79,7 +81,9 @@ fn interfaces(package_id: &str, store: Option<&std::path::Path>) -> CommandResul
 fn runtimes(package_id: &str, store: Option<&std::path::Path>) -> CommandResult {
     let store_root = store::store_root(store).map_err(|err| vec![err])?;
     let package = store::find_installed(&store_root, package_id).map_err(|err| vec![err])?;
-    if let Some((_, manifest)) = store::read_any_target_manifest(&package) {
+    if let Some((_, manifest)) =
+        store::read_any_target_manifest(&package).map_err(|err| vec![err])?
+    {
         for binding in &manifest.bindings {
             println!(
                 "{}#{} -> {}",
