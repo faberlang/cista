@@ -74,12 +74,22 @@ fn interfaces(package_id: &str, store: Option<&std::path::Path>) -> CommandResul
     let store_root = store::store_root(store).map_err(|err| vec![err])?;
     let package = store::find_installed(&store_root, package_id).map_err(|err| vec![err])?;
     let files = store::list_package_files(&package.package_root).map_err(|err| vec![err])?;
-    for file in files {
-        if is_interface_file(&file) {
-            println!("{}", file.display());
+    let interfaces = interface_files(files);
+    if interfaces.is_empty() {
+        println!("(no package interfaces found)");
+    } else {
+        for interface in interfaces {
+            println!("{}", interface.display());
         }
     }
     Ok(())
+}
+
+fn interface_files(files: Vec<std::path::PathBuf>) -> Vec<std::path::PathBuf> {
+    files
+        .into_iter()
+        .filter(|file| is_interface_file(file))
+        .collect()
 }
 
 fn is_interface_file(path: &Path) -> bool {

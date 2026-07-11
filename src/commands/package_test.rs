@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::manifest::Binding;
 
-use super::{is_interface_file, runtime_binding_lines};
+use super::{interface_files, is_interface_file, runtime_binding_lines};
 
 #[test]
 fn interface_files_are_identified_by_path_components() {
@@ -13,6 +13,18 @@ fn interface_files_are_identified_by_path_components() {
         "other/interfaces/mathesis.fab"
     )));
     assert!(!is_interface_file(Path::new("interfaces.fab")));
+}
+
+#[test]
+fn package_interfaces_exclude_non_interface_files() {
+    let files = vec![
+        "cista.toml".into(),
+        "interfaces/solum.fab".into(),
+        "targets/rust/host/cista.toml".into(),
+    ];
+
+    assert_eq!(interface_files(files), [Path::new("interfaces/solum.fab")]);
+    assert!(interface_files(Vec::new()).is_empty());
 }
 
 #[test]
