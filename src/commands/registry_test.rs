@@ -345,3 +345,35 @@ binding_policy = "generated"
     assert!(!registry.join("tool/1.2.3").exists());
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
+
+#[test]
+fn publish_rejects_destination_inside_package() {
+    let root = temp_root().join("destination-inside-package");
+    let registry = root.join("registry");
+    let source = registry.join("tool");
+    fs::create_dir_all(source.join("interfaces")).expect("create source interfaces");
+    fs::write(
+        source.join("cista.toml"),
+        r#"[source]
+package = "tool"
+version = "1.2.3"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#,
+    )
+    .expect("write package manifest");
+
+    let error = publish(&source, Path::new("cista.toml"), Some(&registry))
+        .expect_err("destination inside package should fail closed");
+
+    assert!(error.contains("destination"));
+    assert!(error.contains("cannot be inside published package"));
+    assert!(!source.join("1.2.3").exists());
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}

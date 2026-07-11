@@ -117,6 +117,13 @@ pub(super) fn publish(
     let destination = registry
         .join(&checked.manifest.source.package)
         .join(&checked.manifest.source.version);
+    if destination.starts_with(&checked.package_root) {
+        return Err(format!(
+            "local registry destination {} cannot be inside published package {}",
+            destination.display(),
+            checked.package_root.display()
+        ));
+    }
     verify_registry_publish_path(&registry, &destination)?;
     let package_directory = destination
         .parent()
