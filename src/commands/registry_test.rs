@@ -56,6 +56,43 @@ fn invalid_remote_archive_preserves_cached_package() {
 }
 
 #[test]
+fn mismatched_remote_archive_preserves_cached_package() {
+    let root = temp_root().join("mismatched-remote-archive");
+    let source = root.join("source");
+    let destination = root.join("cached");
+    fs::create_dir_all(&source).expect("create source");
+    fs::create_dir_all(&destination).expect("create cached package");
+    fs::write(
+        source.join("cista.toml"),
+        r#"[source]
+package = "other"
+version = "9.9.9"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#,
+    )
+    .expect("write mismatched manifest");
+    fs::write(destination.join("payload"), "last good package").expect("seed cache");
+
+    let archive = archive_directory(&source).expect("archive mismatched replacement");
+    let error = install_remote_archive(&archive, &destination, "tool", "1.2.3")
+        .expect_err("mismatched identity should fail closed");
+
+    assert!(error.contains("archive declares `other@9.9.9`"));
+    assert_eq!(
+        fs::read_to_string(destination.join("payload")).expect("read preserved cache"),
+        "last good package"
+    );
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn cli_routes_remote_registry_without_accepting_local_registry_too() {
     let cli = CistaCli::try_parse_from([
         "cista",

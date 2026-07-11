@@ -51,10 +51,23 @@ fn install_remote_archive(
     fs_util::replace_directory(&staging)?;
     let install_result = (|| {
         unpack_archive(archive, &staging)?;
-        if !staging.join(manifest::MANIFEST_FILE).is_file() {
+        let manifest_path = staging.join(manifest::MANIFEST_FILE);
+        if !manifest_path.is_file() {
             return Err(format!(
                 "remote package `{name}@{version}` archive has no {}",
                 manifest::MANIFEST_FILE
+            ));
+        }
+        let (archive_name, archive_version) = match manifest::read_meta_manifest(&manifest_path)? {
+            Some(manifest) => (manifest.source.package, manifest.source.version),
+            None => {
+                let manifest = manifest::read_manifest(&manifest_path)?;
+                (manifest.source.package, manifest.source.version)
+            }
+        };
+        if archive_name != name || archive_version != version {
+            return Err(format!(
+                "remote package `{name}@{version}` archive declares `{archive_name}@{archive_version}`"
             ));
         }
         fs_util::copy_dir_clean(&staging, destination)
