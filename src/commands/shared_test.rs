@@ -98,6 +98,39 @@ fn manifest_shape_rejects_compile_fields_for_artifact_mode() {
 }
 
 #[test]
+fn manifest_shape_rejects_artifact_provenance_for_compile_mode() {
+    let mut manifest = manifest(SourceKind::Source, TargetMode::Compile);
+    manifest.target.artifact = None;
+    manifest.target.triple = Some("aarch64-apple-darwin".to_owned());
+    manifest.target.rustc = Some("rustc 1.88.0".to_owned());
+    let mut diagnostics = Vec::new();
+    validate_manifest_shape(&manifest, &mut diagnostics);
+
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic == "target mode `compile` forbids target.triple"));
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic == "target mode `compile` forbids target.rustc"));
+}
+
+#[test]
+fn manifest_shape_requires_provenance_for_artifact_mode() {
+    let mut diagnostics = Vec::new();
+    validate_manifest_shape(
+        &manifest(SourceKind::Artifact, TargetMode::Artifact),
+        &mut diagnostics,
+    );
+
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic == "target mode `artifact` requires target.triple"));
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic == "target mode `artifact` requires target.rustc"));
+}
+
+#[test]
 fn manifest_shape_rejects_bindings_for_generated_policy() {
     let mut manifest = manifest(SourceKind::Artifact, TargetMode::Artifact);
     manifest.bindings.push(Binding {
