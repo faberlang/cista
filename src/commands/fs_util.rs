@@ -7,10 +7,33 @@ static REPLACEMENT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 pub(super) fn copy_dir_clean(source: &Path, destination: &Path) -> Result<(), String> {
     verify_disjoint_directories(source, destination)?;
     let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    copy_dir_clean_with_sequence(source, destination, sequence)
+}
+
+fn copy_dir_clean_with_sequence(
+    source: &Path,
+    destination: &Path,
+    sequence: u64,
+) -> Result<(), String> {
     let staging = replacement_path(destination, "incoming", sequence);
     let backup = replacement_path(destination, "replaced", sequence);
 
-    if let Err(error) = copy_dir_recursive(source, &staging) {
+    let parent = staging
+        .parent()
+        .ok_or_else(|| format!("replacement directory has no parent: {}", staging.display()))?;
+    fs::create_dir_all(parent).map_err(|error| {
+        format!(
+            "failed to create replacement parent directory {}: {error}",
+            parent.display()
+        )
+    })?;
+    fs::create_dir(&staging).map_err(|error| {
+        format!(
+            "failed to reserve replacement directory {}: {error}",
+            staging.display()
+        )
+    })?;
+    if let Err(error) = copy_dir_contents(source, &staging) {
         remove_directory_if_present(&staging)?;
         return Err(error);
     }
@@ -144,6 +167,10 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<(), String> {
             destination.display()
         )
     })?;
+    copy_dir_contents(source, destination)
+}
+
+fn copy_dir_contents(source: &Path, destination: &Path) -> Result<(), String> {
     let entries = fs::read_dir(source)
         .map_err(|err| format!("failed to read directory {}: {err}", source.display()))?;
     for entry in entries {
