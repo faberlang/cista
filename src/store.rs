@@ -183,6 +183,11 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
             if let Ok(relative) = path.strip_prefix(root) {
                 out.push(relative.to_path_buf());
             }
+        } else {
+            return Err(format!(
+                "installed package contains unsupported entry {}",
+                path.display()
+            ));
         }
     }
     Ok(())
