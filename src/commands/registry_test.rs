@@ -49,6 +49,28 @@ fn remote_archive_rejects_package_symlinks() {
 }
 
 #[test]
+fn remote_archive_rejects_link_entries() {
+    let mut archive = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_gnu();
+    header.set_entry_type(tar::EntryType::Symlink);
+    header.set_size(0);
+    header.set_mode(0o777);
+    header.set_cksum();
+    archive
+        .append_link(&mut header, "alias", "payload")
+        .expect("append archive symlink");
+    let bytes = archive.into_inner().expect("finish archive");
+    let destination = temp_root().join("link-entry");
+    fs::create_dir_all(&destination).expect("create destination");
+
+    let error = unpack_archive(&bytes, &destination).expect_err("link entry should fail closed");
+
+    assert!(error.contains("unsupported entry alias"), "{error}");
+    assert!(!destination.join("alias").exists());
+    fs::remove_dir_all(destination).expect("cleanup destination");
+}
+
+#[test]
 fn invalid_remote_archive_preserves_cached_package() {
     let root = temp_root().join("invalid-remote-archive");
     let source = root.join("source");
