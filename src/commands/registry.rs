@@ -105,13 +105,25 @@ pub(super) fn publish(
         .join(&checked.manifest.source.package)
         .join(&checked.manifest.source.version);
     verify_registry_publish_path(&registry, &destination)?;
-    if destination.exists() {
-        return Err(format!(
-            "registry package already exists and is immutable: {}",
-            destination.display()
-        ));
-    }
-    fs_util::copy_dir_clean(&checked.package_root, &destination)?;
+    let package_directory = destination
+        .parent()
+        .ok_or_else(|| format!("registry package has no parent: {}", destination.display()))?;
+    std::fs::create_dir_all(package_directory).map_err(|error| {
+        format!(
+            "failed to create registry package directory {}: {error}",
+            package_directory.display()
+        )
+    })?;
+    fs_util::copy_dir_new(&checked.package_root, &destination).map_err(|error| {
+        if error.starts_with("directory already exists:") {
+            format!(
+                "registry package already exists and is immutable: {}",
+                destination.display()
+            )
+        } else {
+            error
+        }
+    })?;
     Ok(destination)
 }
 

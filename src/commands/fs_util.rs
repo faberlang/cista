@@ -39,6 +39,29 @@ pub(super) fn copy_dir_clean(source: &Path, destination: &Path) -> Result<(), St
     remove_directory_if_present(&backup)
 }
 
+pub(super) fn copy_dir_new(source: &Path, destination: &Path) -> Result<(), String> {
+    match fs::create_dir(destination) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(format!(
+                "directory already exists: {}",
+                destination.display()
+            ));
+        }
+        Err(err) => {
+            return Err(format!(
+                "failed to create new directory {}: {err}",
+                destination.display()
+            ));
+        }
+    }
+    if let Err(error) = copy_dir_recursive(source, destination) {
+        remove_directory_if_present(destination)?;
+        return Err(error);
+    }
+    Ok(())
+}
+
 fn replacement_path(destination: &Path, state: &str, sequence: u64) -> std::path::PathBuf {
     destination.with_extension(format!("{state}-{}-{sequence}", std::process::id()))
 }
