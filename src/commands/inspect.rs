@@ -10,18 +10,19 @@ pub fn run(args: PackageOrPathArg) -> CommandResult {
     match target {
         ResolvedInspectTarget::Path(root) => inspect_path(&root),
         ResolvedInspectTarget::Installed(package) => {
+            let target_manifest =
+                store::read_any_target_manifest(&package).map_err(|err| vec![err])?;
+            let files =
+                store::list_package_files(&package.package_root).map_err(|err| vec![err])?;
+
             println!("package: {}", package.name);
             println!("version: {}", package.version);
             println!("store_root: {}", package.package_root.display());
             println!("interfaces: {}", package.interfaces_dir.display());
-            if let Some((path, manifest)) =
-                store::read_any_target_manifest(&package).map_err(|err| vec![err])?
-            {
+            if let Some((path, manifest)) = target_manifest {
                 println!("target_manifest: {}", path.display());
                 print_manifest_summary(&manifest);
             }
-            let files =
-                store::list_package_files(&package.package_root).map_err(|err| vec![err])?;
             println!("files: {}", files.len());
             Ok(())
         }
