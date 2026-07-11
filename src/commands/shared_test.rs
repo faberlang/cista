@@ -53,6 +53,18 @@ fn manifest_shape_rejects_artifact_kind_with_compile_mode() {
 }
 
 #[test]
+fn manifest_shape_rejects_sources_for_artifact_kind() {
+    let mut manifest = manifest(SourceKind::Artifact, TargetMode::Artifact);
+    manifest.source.sources = Some(PathBuf::from("src"));
+    let mut diagnostics = Vec::new();
+    validate_manifest_shape(&manifest, &mut diagnostics);
+
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic == "source kind `artifact` forbids source.sources"));
+}
+
+#[test]
 fn manifest_shape_rejects_artifact_field_for_compile_mode() {
     let mut diagnostics = Vec::new();
     validate_manifest_shape(

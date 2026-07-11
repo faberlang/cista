@@ -85,6 +85,9 @@ fn validate_manifest_shape(manifest: &CistaManifest, diagnostics: &mut Vec<Strin
             manifest.target.mode.kebab_name()
         ));
     }
+    if matches!(manifest.source.kind, SourceKind::Artifact) && manifest.source.sources.is_some() {
+        diagnostics.push("source kind `artifact` forbids source.sources".to_owned());
+    }
 
     match manifest.target.mode {
         TargetMode::Compile => {
