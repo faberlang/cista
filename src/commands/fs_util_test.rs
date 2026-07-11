@@ -1,6 +1,6 @@
 use std::fs;
 
-use super::copy_dir_clean;
+use super::{copy_dir_clean, copy_dir_clean_with_sequence, replacement_path};
 
 #[cfg(unix)]
 #[test]
@@ -96,6 +96,38 @@ fn package_copy_rejects_source_inside_destination() {
     assert_eq!(
         fs::read_to_string(source.join("payload")).expect("read preserved source"),
         "source"
+    );
+    fs::remove_dir_all(root).expect("remove fixture");
+}
+
+#[test]
+fn package_copy_rejects_preexisting_staging_directory() {
+    let root = std::env::temp_dir().join(format!(
+        "cista-fs-util-occupied-staging-{}",
+        std::process::id()
+    ));
+    let source = root.join("source");
+    let destination = root.join("installed");
+    fs::create_dir_all(&source).expect("create source");
+    fs::create_dir_all(&destination).expect("create destination");
+    fs::write(source.join("new.txt"), "new").expect("write source");
+    fs::write(destination.join("old.txt"), "old").expect("write destination");
+
+    let staging = replacement_path(&destination, "incoming", 42);
+    fs::create_dir_all(&staging).expect("occupy staging directory");
+    fs::write(staging.join("foreign.txt"), "foreign").expect("write foreign staging file");
+
+    let error = copy_dir_clean_with_sequence(&source, &destination, 42)
+        .expect_err("occupied staging directory should fail closed");
+
+    assert!(error.contains("failed to reserve replacement directory"));
+    assert_eq!(
+        fs::read_to_string(destination.join("old.txt")).expect("read preserved destination"),
+        "old"
+    );
+    assert_eq!(
+        fs::read_to_string(staging.join("foreign.txt")).expect("read foreign staging file"),
+        "foreign"
     );
     fs::remove_dir_all(root).expect("remove fixture");
 }
