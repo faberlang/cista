@@ -1,10 +1,12 @@
 use crate::manifest;
 use crate::store;
 use crate::{credentials, registry_http::RegistryHttpClient};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{env, fs_util, shared, Path, PathBuf};
 
 const REGISTRY_ENV: &str = "CISTA_REGISTRY";
+static REMOTE_STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) fn publish_remote(
     package_path: &Path,
@@ -34,30 +36,42 @@ pub(super) fn fetch_remote_to_cache(
         .join("registry")
         .join(&name)
         .join(&version);
-    let staging = destination.with_extension(format!("incoming-{}", std::process::id()));
-    fs_util::replace_directory(&staging)?;
-    unpack_archive(&archive, &staging)?;
-    if !staging.join(manifest::MANIFEST_FILE).is_file() {
-        return Err(format!(
-            "remote package `{name}@{version}` archive has no {}",
-            manifest::MANIFEST_FILE
-        ));
-    }
-    if destination.exists() {
-        std::fs::remove_dir_all(&destination).map_err(|error| {
-            format!(
-                "failed to replace remote package cache {}: {error}",
-                destination.display()
-            )
-        })?;
-    }
-    std::fs::rename(&staging, &destination).map_err(|error| {
-        format!(
-            "failed to install remote package cache {}: {error}",
-            destination.display()
-        )
-    })?;
+    install_remote_archive(&archive, &destination, &name, &version)?;
     Ok(destination)
+}
+
+fn install_remote_archive(
+    archive: &[u8],
+    destination: &Path,
+    name: &str,
+    version: &str,
+) -> Result<(), String> {
+    let sequence = REMOTE_STAGING_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let staging = destination.with_extension(format!("incoming-{}-{sequence}", std::process::id()));
+    fs_util::replace_directory(&staging)?;
+    let install_result = (|| {
+        unpack_archive(archive, &staging)?;
+        if !staging.join(manifest::MANIFEST_FILE).is_file() {
+            return Err(format!(
+                "remote package `{name}@{version}` archive has no {}",
+                manifest::MANIFEST_FILE
+            ));
+        }
+        fs_util::copy_dir_clean(&staging, destination)
+    })();
+    let cleanup_result = std::fs::remove_dir_all(&staging).map_err(|error| {
+        format!(
+            "failed to remove remote package staging directory {}: {error}",
+            staging.display()
+        )
+    });
+    match (install_result, cleanup_result) {
+        (Err(install_error), Err(cleanup_error)) => {
+            Err(format!("{install_error}; {cleanup_error}"))
+        }
+        (Err(error), _) | (_, Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
 }
 
 pub(super) fn publish(
