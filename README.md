@@ -10,8 +10,8 @@ Radix/compiler dependencies so it can stay public and evolve on its own.
 
 | Tool | Role |
 | ---- | ---- |
-| `faber` | Project workflow: check, build, run, test; thin `faber install` facade |
-| `cista` | Package store, resolve/fetch/install, inspect, publish, cache, doctor |
+| `faber` | Project workflow: check, build, run, test; direct Git installation/update of source libraries under `FABER_LIBRARY_HOME` |
+| `cista` | Package store, resolve/fetch/install, inspect, publish, cache, doctor; uses `$CISTAE_HOME` independently of `faber install` |
 | `radix` | Private compiler (not a dependency of this crate) |
 
 ## Store model
