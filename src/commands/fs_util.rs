@@ -71,17 +71,17 @@ impl DirectoryReplacement {
         };
         remove_directory_if_present(backup)?;
         self.backup = None;
-        Ok(())
+        sync_parent_directory(&self.destination)
     }
 
     pub(super) fn rollback(&mut self) -> Result<(), String> {
         remove_directory_if_present(&self.destination)?;
         let Some(backup) = self.backup.as_ref() else {
-            return Ok(());
+            return sync_parent_directory(&self.destination);
         };
         restore_replaced_directory(backup, &self.destination)?;
         self.backup = None;
-        Ok(())
+        sync_parent_directory(&self.destination)
     }
 }
 
@@ -90,6 +90,7 @@ fn commit_staged_directory_with_sequence(
     destination: &Path,
     sequence: u64,
 ) -> Result<DirectoryReplacement, String> {
+    sync_directory_tree(staging)?;
     let backup = replacement_path(destination, "replaced", sequence);
     let backup = if destination.exists() {
         fs::rename(destination, &backup).map_err(|err| {
@@ -123,10 +124,18 @@ fn commit_staged_directory_with_sequence(
             destination.display()
         ));
     }
-    Ok(DirectoryReplacement {
+    let mut replacement = DirectoryReplacement {
         destination: destination.to_path_buf(),
         backup,
-    })
+    };
+    if let Err(error) = sync_parent_directory(destination) {
+        let rollback = replacement.rollback();
+        return Err(match rollback {
+            Ok(()) => error,
+            Err(rollback_error) => format!("{error}; {rollback_error}"),
+        });
+    }
+    Ok(replacement)
 }
 
 fn create_staging_directory(staging: &Path) -> Result<(), String> {
@@ -321,6 +330,59 @@ fn copy_dir_contents(source: &Path, destination: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn sync_directory_tree(path: &Path) -> Result<(), String> {
+    let entries = fs::read_dir(path)
+        .map_err(|err| format!("failed to read staged directory {}: {err}", path.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|err| {
+            format!(
+                "failed to read staged directory entry under {}: {err}",
+                path.display()
+            )
+        })?;
+        let entry_path = entry.path();
+        let file_type = entry.file_type().map_err(|err| {
+            format!(
+                "failed to inspect staged directory entry {}: {err}",
+                entry_path.display()
+            )
+        })?;
+        if file_type.is_dir() {
+            sync_directory_tree(&entry_path)?;
+        } else if file_type.is_file() {
+            fs::File::open(&entry_path)
+                .and_then(|file| file.sync_all())
+                .map_err(|err| {
+                    format!("failed to sync staged file {}: {err}", entry_path.display())
+                })?;
+        } else {
+            return Err(format!("unsupported staged entry {}", entry_path.display()));
+        }
+    }
+    sync_directory(path)
+}
+
+fn sync_parent_directory(path: &Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("path has no parent directory: {}", path.display()))?;
+    sync_directory(parent)
+}
+
+fn sync_directory(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        fs::File::open(path)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|err| format!("failed to sync directory {}: {err}", path.display()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
