@@ -371,18 +371,16 @@ fn sync_parent_directory(path: &Path) -> Result<(), String> {
     sync_directory(parent)
 }
 
+#[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        fs::File::open(path)
-            .and_then(|directory| directory.sync_all())
-            .map_err(|err| format!("failed to sync directory {}: {err}", path.display()))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        Ok(())
-    }
+    fs::File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|err| format!("failed to sync directory {}: {err}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(test)]
