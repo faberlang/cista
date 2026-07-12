@@ -437,6 +437,56 @@ fn install_commit_failure_preserves_existing_snapshot() {
 }
 
 #[test]
+fn install_lock_failure_rolls_back_new_store_snapshot() {
+    let root = temp_root("install-lock-failure");
+    let package = root.join("package");
+    let project = root.join("project");
+    let store = root.join("store");
+    write_interfaces_only_package(&package, "example");
+    let installed = store.join("example/0.1.0");
+    fs::create_dir_all(installed.join("interfaces")).expect("create existing snapshot");
+    fs::write(installed.join("interfaces/old.fab"), "old interface\n")
+        .expect("write existing interface");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join(PROJECT_MANIFEST),
+        r#"[package]
+name = "app"
+version = "0.1.0"
+edition = "2026"
+
+[dependencies]
+example = "0.1.0"
+"#,
+    )
+    .expect("write project manifest");
+    fs::create_dir(project.join(faber_lock::LOCK_FILE)).expect("occupy lock path");
+
+    let error = run(InstallArgs {
+        path: Some(package),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: Some(project),
+        verify_target_build: false,
+    })
+    .expect_err("lock rewrite failure should fail install");
+
+    assert!(error
+        .iter()
+        .any(|message| message.contains("failed to read") && message.contains("faber.lock")));
+    assert_eq!(
+        fs::read_to_string(installed.join("interfaces/old.fab")).expect("read existing interface"),
+        "old interface\n"
+    );
+    assert!(!installed.join("interfaces/example.fab").exists());
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn meta_commit_failure_preserves_existing_snapshot() {
     let root = temp_root("meta-commit-failure");
     let packages = root.join("packages");

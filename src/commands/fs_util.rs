@@ -30,7 +30,8 @@ fn copy_dir_clean_with_sequence(
         return Err(error);
     }
 
-    commit_staged_directory_with_sequence(&staging, destination, sequence)
+    let mut replacement = commit_staged_directory_with_sequence(&staging, destination, sequence)?;
+    replacement.finalize()
 }
 
 pub(super) fn stage_directory(destination: &Path) -> Result<PathBuf, String> {
@@ -46,27 +47,67 @@ pub(super) fn discard_staged_directory(staging: &Path) -> Result<(), String> {
 
 pub(super) fn commit_staged_directory(staging: &Path, destination: &Path) -> Result<(), String> {
     let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let mut replacement = commit_staged_directory_with_sequence(staging, destination, sequence)?;
+    replacement.finalize()
+}
+
+pub(super) fn commit_staged_directory_transaction(
+    staging: &Path,
+    destination: &Path,
+) -> Result<DirectoryReplacement, String> {
+    let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     commit_staged_directory_with_sequence(staging, destination, sequence)
+}
+
+pub(super) struct DirectoryReplacement {
+    destination: PathBuf,
+    backup: Option<PathBuf>,
+}
+
+impl DirectoryReplacement {
+    pub(super) fn finalize(&mut self) -> Result<(), String> {
+        let Some(backup) = self.backup.as_ref() else {
+            return Ok(());
+        };
+        remove_directory_if_present(backup)?;
+        self.backup = None;
+        Ok(())
+    }
+
+    pub(super) fn rollback(&mut self) -> Result<(), String> {
+        remove_directory_if_present(&self.destination)?;
+        let Some(backup) = self.backup.as_ref() else {
+            return Ok(());
+        };
+        restore_replaced_directory(backup, &self.destination)?;
+        self.backup = None;
+        Ok(())
+    }
 }
 
 fn commit_staged_directory_with_sequence(
     staging: &Path,
     destination: &Path,
     sequence: u64,
-) -> Result<(), String> {
+) -> Result<DirectoryReplacement, String> {
     let backup = replacement_path(destination, "replaced", sequence);
-    if destination.exists() {
+    let backup = if destination.exists() {
         fs::rename(destination, &backup).map_err(|err| {
             format!(
                 "failed to stage existing directory {} for replacement: {err}",
                 destination.display()
             )
         })?;
-    }
+        Some(backup)
+    } else {
+        None
+    };
 
     #[cfg(test)]
     if should_inject_commit_failure(destination) {
-        restore_replaced_directory(&backup, destination)?;
+        if let Some(backup) = &backup {
+            restore_replaced_directory(backup, destination)?;
+        }
         return Err(format!(
             "injected failure before installing replacement directory {}",
             destination.display()
@@ -74,15 +115,18 @@ fn commit_staged_directory_with_sequence(
     }
 
     if let Err(error) = fs::rename(staging, destination) {
-        if backup.exists() {
-            restore_replaced_directory(&backup, destination)?;
+        if let Some(backup) = &backup {
+            restore_replaced_directory(backup, destination)?;
         }
         return Err(format!(
             "failed to install replacement directory {}: {error}",
             destination.display()
         ));
     }
-    remove_directory_if_present(&backup)
+    Ok(DirectoryReplacement {
+        destination: destination.to_path_buf(),
+        backup,
+    })
 }
 
 fn create_staging_directory(staging: &Path) -> Result<(), String> {

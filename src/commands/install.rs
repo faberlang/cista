@@ -39,11 +39,23 @@ pub fn run(args: InstallArgs) -> CommandResult {
         args.verify_target_build,
     )?;
     let store_root = shared::resolve_store_root(args.store.as_deref()).map_err(|err| vec![err])?;
-    let installed = install_checked_package(&checked, &store_root)?;
+    let mut installed = install_checked_package_transaction(&checked, &store_root)?;
 
-    if let Some(project_root) = resolve_project_root(args.project.as_deref())? {
-        rewrite_project_lock(&project_root, &checked, &installed)?;
+    let project_root = match resolve_project_root(args.project.as_deref()) {
+        Ok(project_root) => project_root,
+        Err(errors) => return Err(rollback_install(&mut installed, errors)),
+    };
+    if let Some(project_root) = project_root {
+        if let Err(errors) = rewrite_project_lock(&project_root, &checked, &installed.paths) {
+            return Err(rollback_install(&mut installed, errors));
+        }
     }
+
+    installed
+        .replacement
+        .finalize()
+        .map_err(|error| vec![error])?;
+    report_installed(&checked.manifest, &installed.paths);
 
     Ok(())
 }
@@ -151,10 +163,28 @@ struct InstalledPaths {
     interfaces_only: bool,
 }
 
+struct InstalledPackage {
+    paths: InstalledPaths,
+    replacement: fs_util::DirectoryReplacement,
+}
+
 fn install_checked_package(
     checked: &shared::CheckedPackage,
     store_root: &Path,
 ) -> Result<InstalledPaths, Vec<String>> {
+    let mut installed = install_checked_package_transaction(checked, store_root)?;
+    installed
+        .replacement
+        .finalize()
+        .map_err(|error| vec![error])?;
+    report_installed(&checked.manifest, &installed.paths);
+    Ok(installed.paths)
+}
+
+fn install_checked_package_transaction(
+    checked: &shared::CheckedPackage,
+    store_root: &Path,
+) -> Result<InstalledPackage, Vec<String>> {
     let package_store_root = shared::package_store_root(store_root, &checked.manifest);
     let staging = fs_util::stage_directory(&package_store_root).map_err(|err| vec![err])?;
     let result = prepare_package_snapshot(checked, &package_store_root, &staging);
@@ -162,22 +192,36 @@ fn install_checked_package(
         Ok(installed) => installed,
         Err(errors) => return Err(cleanup_staged_install(&staging, errors)),
     };
-    if let Err(error) = fs_util::commit_staged_directory(&staging, &package_store_root) {
-        return Err(cleanup_staged_install(&staging, vec![error]));
-    }
+    let replacement =
+        match fs_util::commit_staged_directory_transaction(&staging, &package_store_root) {
+            Ok(replacement) => replacement,
+            Err(error) => return Err(cleanup_staged_install(&staging, vec![error])),
+        };
+    Ok(InstalledPackage {
+        paths: installed,
+        replacement,
+    })
+}
 
+fn rollback_install(installed: &mut InstalledPackage, mut errors: Vec<String>) -> Vec<String> {
+    if let Err(error) = installed.replacement.rollback() {
+        errors.push(error);
+    }
+    errors
+}
+
+fn report_installed(manifest: &CistaManifest, installed: &InstalledPaths) {
     println!(
         "installed: {} {} -> {}{}",
-        checked.manifest.source.package,
-        checked.manifest.source.version,
-        package_store_root.display(),
+        manifest.source.package,
+        manifest.source.version,
+        installed.package_store_root.display(),
         if installed.interfaces_only {
             " (interfaces only)"
         } else {
             ""
         }
     );
-    Ok(installed)
 }
 
 fn prepare_package_snapshot(
