@@ -1,6 +1,8 @@
 use super::*;
 use crate::cli::InstallArgs;
 use crate::faber_lock::read_lock;
+use fs2::FileExt;
+use std::fs::OpenOptions;
 use std::process::Command;
 
 fn temp_root(name: &str) -> PathBuf {
@@ -21,6 +23,31 @@ fn faberlang_workspace() -> PathBuf {
         })
         .expect("faberlang workspace containing faber and norma")
         .to_path_buf()
+}
+
+#[test]
+fn install_lock_excludes_other_handles() {
+    let root = temp_root("install-lock");
+    let store = root.join("store");
+    let lock = acquire_install_locks(&store, None).expect("acquire install lock");
+    let lock_path = store.join(INSTALL_LOCK_FILE);
+    let contender = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .expect("open competing lock handle");
+
+    assert!(
+        contender.try_lock_exclusive().is_err(),
+        "a second handle must not enter the install critical section"
+    );
+    drop(lock);
+    contender
+        .try_lock_exclusive()
+        .expect("lock should be released when the guard drops");
+    contender.unlock().expect("unlock competing handle");
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
 }
 
 #[test]
@@ -324,8 +351,8 @@ path = "../../outside"
         )
     }));
     assert!(
-        !store.exists(),
-        "rejected dependency must not install a store entry"
+        !store.join("outside/0.1.0").exists(),
+        "rejected dependency must not install a package snapshot"
     );
 
     fs::remove_dir_all(root).expect("cleanup temp root");
