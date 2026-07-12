@@ -159,8 +159,12 @@ fn install_meta_package(
         }
         checked_dependencies.push(checked);
     }
+    let mut installed_dependencies = Vec::with_capacity(checked_dependencies.len());
     for checked in &checked_dependencies {
-        install_checked_package(checked, store_root)?;
+        match install_checked_package_transaction(checked, store_root) {
+            Ok(installed) => installed_dependencies.push(installed),
+            Err(errors) => return Err(rollback_installs(&mut installed_dependencies, errors)),
+        }
     }
 
     let meta_root = store_root
@@ -178,16 +182,44 @@ fn install_meta_package(
             })
             .collect(),
     };
-    let contents = toml::to_string_pretty(&installed_meta)
-        .map_err(|err| vec![format!("failed to render installed meta manifest: {err}")])?;
-    let staging = fs_util::stage_directory(&meta_root).map_err(|err| vec![err])?;
+    let contents = toml::to_string_pretty(&installed_meta).map_err(|err| {
+        rollback_installs(
+            &mut installed_dependencies,
+            vec![format!("failed to render installed meta manifest: {err}")],
+        )
+    })?;
+    let staging = match fs_util::stage_directory(&meta_root) {
+        Ok(staging) => staging,
+        Err(error) => return Err(rollback_installs(&mut installed_dependencies, vec![error])),
+    };
     let result = fs::write(staging.join(manifest::MANIFEST_FILE), contents)
         .map_err(|err| vec![format!("failed to write installed meta manifest: {err}")]);
     if let Err(errors) = result {
-        return Err(cleanup_staged_install(&staging, errors));
+        let errors = cleanup_staged_install(&staging, errors);
+        return Err(rollback_installs(&mut installed_dependencies, errors));
     }
-    if let Err(error) = fs_util::commit_staged_directory(&staging, &meta_root) {
-        return Err(cleanup_staged_install(&staging, vec![error]));
+    let mut meta_replacement =
+        match fs_util::commit_staged_directory_transaction(&staging, &meta_root) {
+            Ok(replacement) => replacement,
+            Err(error) => {
+                let errors = cleanup_staged_install(&staging, vec![error]);
+                return Err(rollback_installs(&mut installed_dependencies, errors));
+            }
+        };
+    if let Err(error) = meta_replacement.finalize() {
+        let mut errors = vec![error];
+        if let Err(rollback_error) = meta_replacement.rollback() {
+            errors.push(rollback_error);
+        }
+        return Err(rollback_installs(&mut installed_dependencies, errors));
+    }
+    for installed in &mut installed_dependencies {
+        if let Err(error) = installed.replacement.finalize() {
+            return Err(vec![error]);
+        }
+    }
+    for (checked, installed) in checked_dependencies.iter().zip(&installed_dependencies) {
+        report_installed(&checked.manifest, &installed.paths);
     }
     println!(
         "installed: {} {} -> {} (meta, {} dependencies)",
@@ -214,19 +246,6 @@ struct InstalledPackage {
     replacement: fs_util::DirectoryReplacement,
 }
 
-fn install_checked_package(
-    checked: &shared::CheckedPackage,
-    store_root: &Path,
-) -> Result<InstalledPaths, Vec<String>> {
-    let mut installed = install_checked_package_transaction(checked, store_root)?;
-    installed
-        .replacement
-        .finalize()
-        .map_err(|error| vec![error])?;
-    report_installed(&checked.manifest, &installed.paths);
-    Ok(installed.paths)
-}
-
 fn install_checked_package_transaction(
     checked: &shared::CheckedPackage,
     store_root: &Path,
@@ -249,9 +268,15 @@ fn install_checked_package_transaction(
     })
 }
 
-fn rollback_install(installed: &mut InstalledPackage, mut errors: Vec<String>) -> Vec<String> {
-    if let Err(error) = installed.replacement.rollback() {
-        errors.push(error);
+fn rollback_install(installed: &mut InstalledPackage, errors: Vec<String>) -> Vec<String> {
+    rollback_installs(std::slice::from_mut(installed), errors)
+}
+
+fn rollback_installs(installed: &mut [InstalledPackage], mut errors: Vec<String>) -> Vec<String> {
+    for installed in installed.iter_mut().rev() {
+        if let Err(error) = installed.replacement.rollback() {
+            errors.push(error);
+        }
     }
     errors
 }

@@ -45,12 +45,6 @@ pub(super) fn discard_staged_directory(staging: &Path) -> Result<(), String> {
     remove_directory_if_present(staging)
 }
 
-pub(super) fn commit_staged_directory(staging: &Path, destination: &Path) -> Result<(), String> {
-    let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let mut replacement = commit_staged_directory_with_sequence(staging, destination, sequence)?;
-    replacement.finalize()
-}
-
 pub(super) fn commit_staged_directory_transaction(
     staging: &Path,
     destination: &Path,

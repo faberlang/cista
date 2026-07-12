@@ -561,6 +561,10 @@ path = "../dependency"
         fs::read_to_string(installed.join("cista.toml")).expect("read old meta snapshot"),
         "old meta snapshot\n"
     );
+    assert!(
+        !store.join("dependency/0.1.0").exists(),
+        "failed meta install must roll back dependency snapshots"
+    );
     assert_eq!(
         fs::read_dir(store.join("meta"))
             .expect("read meta versions")
