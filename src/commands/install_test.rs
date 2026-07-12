@@ -283,6 +283,55 @@ path = "../true"
 }
 
 #[test]
+fn install_meta_rejects_dependency_paths_outside_package_collection() {
+    let root = temp_root("meta-contained-path");
+    let packages = root.join("packages");
+    let meta = packages.join("meta");
+    let outside = root.join("outside");
+    let store = root.join("store");
+    fs::create_dir_all(&meta).expect("create meta package");
+    fs::create_dir_all(&outside).expect("create outside package");
+    fs::write(
+        meta.join("cista.toml"),
+        r#"[source]
+package = "meta"
+version = "0.1.0"
+role = "meta"
+
+[[dependencies]]
+package = "outside"
+version = "0.1.0"
+path = "../../outside"
+"#,
+    )
+    .expect("write meta manifest");
+
+    let error = run(InstallArgs {
+        path: Some(meta),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("meta dependency outside package collection must fail");
+
+    assert!(error.iter().any(|message| {
+        message.contains(
+            "meta dependency `outside@0.1.0` path resolves outside package collection root",
+        )
+    }));
+    assert!(
+        !store.exists(),
+        "rejected dependency must not install a store entry"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn ordinary_manifest_rejects_meta_role() {
     let root = temp_root("ordinary-meta-role");
     let manifest_path = root.join("cista.toml");

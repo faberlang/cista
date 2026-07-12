@@ -77,7 +77,12 @@ fn install_meta_package(
                 "local meta dependency `{identity}` requires a relative path"
             )]
         })?;
-        let dependency_root = package_root.join(dependency_path);
+        let dependency_root = shared::resolve_meta_dependency_path(
+            package_root,
+            &format!("meta dependency `{identity}`"),
+            dependency_path,
+        )
+        .map_err(|error| vec![error])?;
         let checked = shared::validate_package(
             &dependency_root,
             &args.manifest,

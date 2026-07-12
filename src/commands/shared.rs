@@ -77,6 +77,53 @@ pub(super) fn package_manifest_path(
     resolve_package_path(package_root, "manifest", manifest_name)
 }
 
+/// Resolve a local meta dependency within the package collection containing
+/// the meta package. Sibling paths such as `../true` are valid; traversal
+/// beyond that collection and symlink escapes are not.
+pub(super) fn resolve_meta_dependency_path(
+    meta_root: &Path,
+    field: &str,
+    path: &Path,
+) -> Result<PathBuf, String> {
+    if path.as_os_str().is_empty() {
+        return Err(format!("{field} path must not be empty"));
+    }
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::Prefix(_) | Component::RootDir))
+    {
+        return Err(format!("{field} path must be relative: {}", path.display()));
+    }
+
+    let meta_root = meta_root.canonicalize().map_err(|error| {
+        format!(
+            "{field} package root cannot be resolved: {}: {error}",
+            meta_root.display()
+        )
+    })?;
+    let package_collection_root = meta_root.parent().ok_or_else(|| {
+        format!(
+            "{field} package root has no containing collection: {}",
+            meta_root.display()
+        )
+    })?;
+    let candidate = meta_root.join(path);
+    let resolved = candidate.canonicalize().map_err(|error| {
+        format!(
+            "{field} path cannot be resolved: {}: {error}",
+            candidate.display()
+        )
+    })?;
+    if !resolved.starts_with(package_collection_root) {
+        return Err(format!(
+            "{field} path resolves outside package collection root: {}",
+            resolved.display()
+        ));
+    }
+    Ok(resolved)
+}
+
 pub(super) fn resolve_package_path(
     package_root: &Path,
     field: &str,
