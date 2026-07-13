@@ -2,7 +2,7 @@
 
 **Status**: Phase G and path-safety theme v1 closed; live cista.dev validation operator-gated
 **Created**: 2026-06-21
-**Updated**: 2026-07-11
+**Updated**: 2026-07-13
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
 **Factory Artifact Dir**: `docs/factory/cista-package-store/`
 **Related**: `phase-a-delivery.md` (shipped), `phase-b-problem.md` (problem lock), `phase-b-delivery.md` (Phase B closed)
@@ -11,6 +11,62 @@ no crate dependency on sibling `faber`).
 **Primary Goal**: ship Faber's shared package artifact store, install lifecycle,
 faber consumption of installed packages, package roles (lib / bin / meta),
 `cista run` for installed apps, and later cista.dev client surfaces.
+
+## Active Status Index
+
+This goal is currently in a closed/local-contract state, not an open
+implementation queue.
+
+### Current local/package-store contract
+
+- `$CISTAE_HOME`, defaulting to `~/.faber/cistae`, is the shared cista package
+  store.
+- Faber projects keep `faber.toml` and `faber.lock`; installed dependency
+  contents stay in the shared store.
+- `cista` owns package-store install, inspect, remove, `run`, local/dev
+  registry publish/fetch, authenticated remote transport, credential storage,
+  cache staging, and path containment.
+- `faber` consumes the documented file contracts and remains independent of the
+  `cista` crate, process, and store discovery during normal builds.
+- Package roles `lib`, `bin`, and `meta` are part of the same store model.
+
+### Archived phase history
+
+Phase A through Phase G are preserved below as delivery history and shipped
+evidence, not as fresh open work:
+
+- Phase A: local library install, inspect/remove, and Faber lock consumption.
+- Phase B: Norma platform-default package problem/delivery lock.
+- Phase C: binary package install.
+- Phase D: `cista run` for installed binaries.
+- Phase E: meta package dependency expansion.
+- Phase F: immutable local/dev registry publish/fetch/install.
+- Phase G: authenticated HTTP transport, credential CLI, remote CLI routing,
+  staged archive fetch, and hermetic failure coverage.
+- Path-safety theme v1: closed through `64a567d` with containment proof from
+  local package selection through remote transfer and replacement staging.
+
+### Gated live proof
+
+No live `cista.dev` result is claimed by this goal. The remaining proof is a
+bounded integration residual, not a new unblocked phase. It may run only after
+an operator provides the explicit live gate:
+
+- `CISTA_LIVE_REGISTRY=1`;
+- a bare HTTPS `CISTA_LIVE_REGISTRY_URL`;
+- `CISTA_REGISTRY_TOKEN` for a disposable publisher identity;
+- `CISTA_LIVE_PACKAGE_PATH` for a unique disposable package version;
+- isolated `HOME` and `CISTAE_HOME` roots.
+
+The evidence bar is host origin, disposable package identity, CLI commit, HTTP
+outcome classes without token/header values, inventory comparison, immutable
+conflict proof, authenticated-failure proof after logout, and isolated
+directory cleanup.
+
+No further unblocked `cista.dev` unit is named here. Future public registry
+server, website, identity, trust, and operations work belongs to
+`../cista-dev-registry/CAMPAIGN.md` and remains subject to operator gates for
+live infrastructure, credentials, DNS, and public launch decisions.
 
 ## Summary
 
