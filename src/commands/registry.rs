@@ -200,6 +200,36 @@ pub(super) fn fetch_to_cache(
     Ok(destination)
 }
 
+pub(super) fn reject_meta_install_by_name(
+    package_id: &str,
+    explicit_registry: Option<&Path>,
+) -> Result<(), String> {
+    let (name, version) = exact_identity(package_id)?;
+    let registry = registry_root(explicit_registry)?;
+    let source = registry.join(&name).join(&version);
+    verify_registry_package_path(&registry, &source)?;
+    let source_manifest = source.join(manifest::MANIFEST_FILE);
+    if !source_manifest.is_file() {
+        return Err(format!(
+            "package `{name}@{version}` is not published in registry {}",
+            registry.display()
+        ));
+    }
+    if let Some(meta) = manifest::read_meta_manifest(&source_manifest)? {
+        if meta.source.package != name || meta.source.version != version {
+            return Err(format!(
+                "registry package `{name}@{version}` declares `{}@{}`",
+                meta.source.package, meta.source.version
+            ));
+        }
+        validate_cached_meta_package(&meta)?;
+        return Err(format!(
+            "registry meta package `{name}@{version}` cannot be installed by name yet; install a local pathful meta package with --path or install its dependencies explicitly"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_cached_package(package_root: &Path) -> Result<(), String> {
     shared::validate_package(
         package_root,

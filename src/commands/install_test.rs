@@ -310,6 +310,59 @@ path = "../true"
 }
 
 #[test]
+fn install_by_name_rejects_registry_meta_before_cache_mutation() {
+    let root = temp_root("registry-meta-install-name");
+    let registry_meta = root.join("registry/coreutils/1.0.0");
+    let store = root.join("store");
+    fs::create_dir_all(&registry_meta).expect("create registry meta package");
+    fs::write(
+        registry_meta.join("cista.toml"),
+        r#"[source]
+package = "coreutils"
+version = "1.0.0"
+role = "meta"
+
+[[dependencies]]
+package = "true"
+version = "1.0.0"
+"#,
+    )
+    .expect("write registry meta manifest");
+
+    let error = run(InstallArgs {
+        path: None,
+        package: Some("coreutils@1.0.0".to_owned()),
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: Some(root.join("registry")),
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("registry meta install by name should fail deterministically");
+
+    assert!(
+        error.iter().any(|message| message
+            .contains("registry meta package `coreutils@1.0.0` cannot be installed by name yet")),
+        "missing registry meta unsupported diagnostic: {error:?}"
+    );
+    assert!(
+        !store.join(".cache/registry/coreutils/1.0.0").exists(),
+        "rejected install-by-name must not mutate registry cache"
+    );
+    assert!(
+        !store.join("coreutils/1.0.0").exists(),
+        "rejected install-by-name must not write the package store"
+    );
+    assert!(
+        !store.join("true/1.0.0").exists(),
+        "rejected install-by-name must not install pathless dependencies"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn install_meta_rejects_dependency_paths_outside_package_collection() {
     let root = temp_root("meta-contained-path");
     let packages = root.join("packages");

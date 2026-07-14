@@ -15,6 +15,8 @@ pub fn run(args: InstallArgs) -> CommandResult {
     let package_path = match (&args.path, &args.package) {
         (Some(path), None) => path.clone(),
         (None, Some(package)) => {
+            registry::reject_meta_install_by_name(package, args.registry.as_deref())
+                .map_err(|err| vec![err])?;
             registry::fetch_to_cache(package, args.registry.as_deref(), args.store.as_deref())
                 .map_err(|err| vec![err])?
         }
