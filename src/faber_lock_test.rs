@@ -26,6 +26,42 @@ fn package(name: &str, version: &str) -> LockedPackage {
     }
 }
 
+fn replacement_lock() -> FaberLock {
+    FaberLock {
+        packages: vec![package("new", "2.0.0")],
+    }
+}
+
+fn seed_existing_lock(path: &Path) -> LockedPackage {
+    let existing = package("old", "1.0.0");
+    write_lock(
+        path,
+        &FaberLock {
+            packages: vec![existing.clone()],
+        },
+    )
+    .expect("seed existing lock");
+    existing
+}
+
+fn temporary_lock_files(directory: &Path) -> Vec<PathBuf> {
+    fs::read_dir(directory)
+        .expect("list lock directory")
+        .filter_map(|entry| {
+            let path = entry.expect("read lock directory entry").path();
+            let name = path.file_name()?.to_str()?;
+            (name.starts_with("faber.lock.") && name.ends_with(".tmp")).then_some(path)
+        })
+        .collect()
+}
+
+fn assert_existing_lock_is_preserved(path: &Path, existing: &LockedPackage) {
+    assert_eq!(
+        read_lock(path).expect("read preserved lock").packages,
+        vec![existing.clone()]
+    );
+}
+
 #[test]
 fn write_lock_replaces_existing_file_with_stable_ordering() {
     let directory = temporary_directory();
@@ -54,6 +90,105 @@ fn write_lock_replaces_existing_file_with_stable_ordering() {
             .expect("list test directory")
             .count(),
         1
+    );
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn write_lock_create_failure_preserves_existing_lock_without_temp_file() {
+    let directory = temporary_directory();
+    let path = directory.join(LOCK_FILE);
+    fs::create_dir_all(&directory).expect("create test directory");
+    let existing = seed_existing_lock(&path);
+
+    inject_write_and_replace_fault(WriteAndReplaceFault::BeforeCreate);
+    let error = write_lock(&path, &replacement_lock())
+        .expect_err("injected temporary creation failure should fail");
+
+    assert!(
+        error.contains("injected failure before creating"),
+        "{error}"
+    );
+    assert_existing_lock_is_preserved(&path, &existing);
+    assert!(
+        temporary_lock_files(&directory).is_empty(),
+        "create failure must not leave a temporary lock file"
+    );
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn write_lock_write_failure_preserves_existing_lock_and_removes_temp_file() {
+    let directory = temporary_directory();
+    let path = directory.join(LOCK_FILE);
+    fs::create_dir_all(&directory).expect("create test directory");
+    let existing = seed_existing_lock(&path);
+
+    inject_write_and_replace_fault(WriteAndReplaceFault::Write);
+    let error = write_lock(&path, &replacement_lock())
+        .expect_err("injected temporary write failure should fail");
+
+    assert!(error.contains("injected failure while writing"), "{error}");
+    assert_existing_lock_is_preserved(&path, &existing);
+    assert!(
+        temporary_lock_files(&directory).is_empty(),
+        "write failure must remove the temporary lock file"
+    );
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn write_lock_rename_failure_preserves_existing_lock_and_removes_temp_file() {
+    let directory = temporary_directory();
+    let path = directory.join(LOCK_FILE);
+    fs::create_dir_all(&directory).expect("create test directory");
+    let existing = seed_existing_lock(&path);
+
+    inject_write_and_replace_fault(WriteAndReplaceFault::Rename);
+    let error = write_lock(&path, &replacement_lock())
+        .expect_err("injected temporary rename failure should fail");
+
+    assert!(
+        error.contains("injected failure while replacing"),
+        "{error}"
+    );
+    assert_existing_lock_is_preserved(&path, &existing);
+    assert!(
+        temporary_lock_files(&directory).is_empty(),
+        "rename failure must remove the temporary lock file"
+    );
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn write_lock_cleanup_failure_preserves_existing_lock_and_surfaces_cleanup_error() {
+    let directory = temporary_directory();
+    let path = directory.join(LOCK_FILE);
+    fs::create_dir_all(&directory).expect("create test directory");
+    let existing = seed_existing_lock(&path);
+
+    inject_write_and_replace_faults(vec![
+        WriteAndReplaceFault::Rename,
+        WriteAndReplaceFault::Cleanup,
+    ]);
+    let error = write_lock(&path, &replacement_lock())
+        .expect_err("injected temporary cleanup failure should fail");
+
+    assert!(
+        error.contains("injected failure while replacing")
+            && error.contains("failed to remove")
+            && error.contains("injected cleanup failure"),
+        "{error}"
+    );
+    assert_existing_lock_is_preserved(&path, &existing);
+    assert_eq!(
+        temporary_lock_files(&directory).len(),
+        1,
+        "cleanup failure should leave the temporary lock file for diagnostics"
     );
 
     fs::remove_dir_all(directory).expect("remove test directory");

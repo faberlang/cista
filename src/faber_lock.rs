@@ -4,6 +4,8 @@
 //! consumes absolute paths from it without knowing about the package store.
 
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
+use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -11,6 +13,44 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const LOCK_FILE: &str = "faber.lock";
 static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+thread_local! {
+    static WRITE_AND_REPLACE_FAULTS: RefCell<Vec<WriteAndReplaceFault>> = const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum WriteAndReplaceFault {
+    BeforeCreate,
+    Write,
+    Rename,
+    Cleanup,
+}
+
+#[cfg(test)]
+pub(super) fn inject_write_and_replace_fault(fault: WriteAndReplaceFault) {
+    inject_write_and_replace_faults(vec![fault]);
+}
+
+#[cfg(test)]
+pub(super) fn inject_write_and_replace_faults(faults: Vec<WriteAndReplaceFault>) {
+    WRITE_AND_REPLACE_FAULTS.with(|slot| {
+        *slot.borrow_mut() = faults;
+    });
+}
+
+#[cfg(test)]
+fn should_fail_write_and_replace(fault: WriteAndReplaceFault) -> bool {
+    WRITE_AND_REPLACE_FAULTS.with(|slot| {
+        let mut faults = slot.borrow_mut();
+        if faults.first() != Some(&fault) {
+            return false;
+        }
+        faults.remove(0);
+        true
+    })
+}
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -76,32 +116,68 @@ fn temporary_lock_path(path: &Path) -> PathBuf {
 }
 
 fn write_and_replace(path: &Path, temporary_path: &Path, contents: &[u8]) -> Result<(), String> {
+    #[cfg(test)]
+    if should_fail_write_and_replace(WriteAndReplaceFault::BeforeCreate) {
+        return Err(format!(
+            "injected failure before creating {}",
+            temporary_path.display()
+        ));
+    }
     let mut temporary = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(temporary_path)
         .map_err(|err| format!("failed to create {}: {err}", temporary_path.display()))?;
+    #[cfg(test)]
+    let write_result = if should_fail_write_and_replace(WriteAndReplaceFault::Write) {
+        Err(format!(
+            "injected failure while writing {}",
+            temporary_path.display()
+        ))
+    } else {
+        temporary
+            .write_all(contents)
+            .and_then(|()| temporary.sync_all())
+            .map_err(|err| format!("failed to write {}: {err}", temporary_path.display()))
+    };
+    #[cfg(not(test))]
     let write_result = temporary
         .write_all(contents)
         .and_then(|()| temporary.sync_all())
         .map_err(|err| format!("failed to write {}: {err}", temporary_path.display()));
     drop(temporary);
     let result = write_result.and_then(|()| {
+        #[cfg(test)]
+        if should_fail_write_and_replace(WriteAndReplaceFault::Rename) {
+            return Err(format!(
+                "injected failure while replacing {}",
+                path.display()
+            ));
+        }
         fs::rename(temporary_path, path)
             .map_err(|err| format!("failed to replace {}: {err}", path.display()))
     });
     match result {
         Ok(()) => Ok(()),
-        Err(operation_error) => match fs::remove_file(temporary_path) {
-            Ok(()) => Err(operation_error),
-            Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {
-                Err(operation_error)
+        Err(operation_error) => {
+            #[cfg(test)]
+            if should_fail_write_and_replace(WriteAndReplaceFault::Cleanup) {
+                return Err(format!(
+                    "{operation_error}; failed to remove {}: injected cleanup failure",
+                    temporary_path.display()
+                ));
             }
-            Err(cleanup_error) => Err(format!(
-                "{operation_error}; failed to remove {}: {cleanup_error}",
-                temporary_path.display()
-            )),
-        },
+            match fs::remove_file(temporary_path) {
+                Ok(()) => Err(operation_error),
+                Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {
+                    Err(operation_error)
+                }
+                Err(cleanup_error) => Err(format!(
+                    "{operation_error}; failed to remove {}: {cleanup_error}",
+                    temporary_path.display()
+                )),
+            }
+        }
     }
 }
 
