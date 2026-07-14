@@ -7,6 +7,7 @@ use super::{env, fs_util, shared, Path, PathBuf};
 
 const REGISTRY_ENV: &str = "CISTA_REGISTRY";
 static REMOTE_STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+const DANGEROUS_ARCHIVE_MODE_BITS: u32 = 0o7002;
 
 pub(super) fn publish_remote(
     package_path: &Path,
@@ -385,6 +386,7 @@ fn unpack_archive(bytes: &[u8], destination: &Path) -> Result<(), String> {
                 path.display()
             ));
         }
+        validate_archive_entry_mode(&path, entry.header())?;
         if !entry
             .unpack_in(destination)
             .map_err(|error| format!("failed to unpack remote package archive: {error}"))?
@@ -394,6 +396,22 @@ fn unpack_archive(bytes: &[u8], destination: &Path) -> Result<(), String> {
                 path.display()
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_archive_entry_mode(path: &Path, header: &tar::Header) -> Result<(), String> {
+    let mode = header.mode().map_err(|error| {
+        format!(
+            "failed to read remote package archive mode for {}: {error}",
+            path.display()
+        )
+    })?;
+    if mode & DANGEROUS_ARCHIVE_MODE_BITS != 0 {
+        return Err(format!(
+            "remote package archive entry {} requests dangerous mode {mode:#o}",
+            path.display()
+        ));
     }
     Ok(())
 }

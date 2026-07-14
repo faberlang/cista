@@ -112,9 +112,9 @@ absolute paths, symlinks/hardlinks, device files, or setuid bits. The server
 re-stores it without validation; a later fetch unpacks it (client
 `unpack_archive`) and escapes `$CISTAE_HOME` or drops a privileged binary.
 
-**Evidence:** client `unpack_archive` rejects non-file/non-dir entries and
-uses `unpack_in` (path-escape-checked), **but** `tar`'s `unpack_in` preserves
-mode bits (setuid/exec/world-writable) by default — **client gap**. Server
+**Evidence:** client `unpack_archive` rejects non-file/non-dir entries, uses
+`unpack_in` (path-escape-checked), and rejects entries requesting setuid,
+setgid, sticky, or world-writable modes before cache installation. Server
 should validate on ingest regardless.
 
 **Impact:** local path escape, privilege escalation, persistence.
@@ -124,8 +124,8 @@ symlinks/hardlinks/devices, oversized entries, nested-root escapes; cap total
 uncompressed size; normalize modes (strip setuid/setgid/sticky); store a
 canonical archive + checksum. Re-validate on fetch.
 
-**Client controls (recommended):** strip dangerous mode bits on unpack;
-optionally re-validate against server-declared checksum.
+**Client controls (covered locally):** reject dangerous mode bits on unpack;
+optionally re-validate against server-declared checksum when checksums exist.
 
 **Owner:** server Stage 2 (ingest validation) + small client hardening Hand
 (mode stripping in `unpack_archive`).
@@ -205,7 +205,7 @@ sign-off on threat-model coverage and recovery evidence."
 | 2 | Ownership + scoped-token model decision (T3) | high | decision_only (Mind + CPO) | S |
 | 3 | Server archive ingest validation spec (T4) — absolute/`..`/symlink/device/mode/size | high | hand (cista server Stage 2) | M |
 | 4 | Client integrity field: checksum (+ future signature) in lockfile + manifest (T1) | high | hand (cista client) | M |
-| 5 | Client: strip setuid/setgid/sticky + world-writable on `unpack_archive` (T4) | medium | hand (cista client) | S |
+| 5 | Client: reject setuid/setgid/sticky + world-writable on `unpack_archive` (T4) | medium | done (cista client) | S |
 | 6 | Token redaction + audit-log schema (T6, T8) | medium | hand (server Stage 4) | M |
 | 7 | Rate-limit + abuse/quarantine policy (T7) | medium | decision_only (Stage 4) | S |
 | 8 | Website render sanitization + CSP (T5) | medium | hand (Stage 3 website) | M |

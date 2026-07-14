@@ -2,6 +2,7 @@ use super::*;
 use crate::cli::{CistaCli, CistaCommand};
 use clap::Parser;
 use std::fs;
+use std::io::Cursor;
 
 fn temp_root() -> PathBuf {
     let nanos = std::time::SystemTime::now()
@@ -68,6 +69,47 @@ fn remote_archive_rejects_link_entries() {
     assert!(error.contains("unsupported entry alias"), "{error}");
     assert!(!destination.join("alias").exists());
     fs::remove_dir_all(destination).expect("cleanup destination");
+}
+
+fn archive_with_mode(path: &str, mode: u32) -> Vec<u8> {
+    let mut archive = tar::Builder::new(Vec::new());
+    let payload = b"malicious payload";
+    let mut header = tar::Header::new_gnu();
+    header.set_size(payload.len() as u64);
+    header.set_mode(mode);
+    header.set_cksum();
+    archive
+        .append_data(&mut header, path, Cursor::new(payload))
+        .expect("append archive entry");
+    archive.into_inner().expect("finish archive")
+}
+
+#[test]
+fn remote_archive_rejects_world_writable_file_mode_before_cache_write() {
+    let root = temp_root().join("world-writable-remote-archive");
+    let destination = root.join("cached");
+    let archive = archive_with_mode("payload", 0o777);
+
+    let error = install_remote_archive(&archive, &destination, "tool", "1.2.3")
+        .expect_err("world-writable archive entry should fail closed");
+
+    assert!(error.contains("dangerous mode 0o777"), "{error}");
+    assert!(!destination.exists());
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn remote_archive_rejects_setuid_world_writable_file_mode_before_cache_write() {
+    let root = temp_root().join("setuid-world-writable-remote-archive");
+    let destination = root.join("cached");
+    let archive = archive_with_mode("payload", 0o4777);
+
+    let error = install_remote_archive(&archive, &destination, "tool", "1.2.3")
+        .expect_err("setuid archive entry should fail closed");
+
+    assert!(error.contains("dangerous mode 0o4777"), "{error}");
+    assert!(!destination.exists());
+    fs::remove_dir_all(root).expect("cleanup temp root");
 }
 
 #[test]
