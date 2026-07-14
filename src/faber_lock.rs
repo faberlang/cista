@@ -25,6 +25,7 @@ pub(super) enum WriteAndReplaceFault {
     BeforeCreate,
     Write,
     Rename,
+    SyncParent,
     Cleanup,
 }
 
@@ -155,7 +156,15 @@ fn write_and_replace(path: &Path, temporary_path: &Path, contents: &[u8]) -> Res
             ));
         }
         fs::rename(temporary_path, path)
-            .map_err(|err| format!("failed to replace {}: {err}", path.display()))
+            .map_err(|err| format!("failed to replace {}: {err}", path.display()))?;
+        #[cfg(test)]
+        if should_fail_write_and_replace(WriteAndReplaceFault::SyncParent) {
+            return Err(format!(
+                "injected failure while syncing parent directory after replacing {}",
+                path.display()
+            ));
+        }
+        sync_parent_directory(path)
     });
     match result {
         Ok(()) => Ok(()),
@@ -179,6 +188,25 @@ fn write_and_replace(path: &Path, temporary_path: &Path, contents: &[u8]) -> Res
             }
         }
     }
+}
+
+fn sync_parent_directory(path: &Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("path has no parent directory: {}", path.display()))?;
+    sync_directory(parent)
+}
+
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> Result<(), String> {
+    fs::File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|err| format!("failed to sync directory {}: {err}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 /// Upsert one package record by name (exact version replace).

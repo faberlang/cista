@@ -195,6 +195,34 @@ fn write_lock_cleanup_failure_preserves_existing_lock_and_surfaces_cleanup_error
 }
 
 #[test]
+fn write_lock_parent_sync_failure_reports_committed_lock_risk() {
+    let directory = temporary_directory();
+    let path = directory.join(LOCK_FILE);
+    fs::create_dir_all(&directory).expect("create test directory");
+    seed_existing_lock(&path);
+
+    inject_write_and_replace_fault(WriteAndReplaceFault::SyncParent);
+    let error = write_lock(&path, &replacement_lock())
+        .expect_err("injected parent directory sync failure should fail");
+
+    assert!(
+        error.contains("injected failure while syncing parent directory after replacing"),
+        "{error}"
+    );
+    assert_eq!(
+        read_lock(&path).expect("read replaced lock after sync failure"),
+        replacement_lock(),
+        "rename has committed before parent directory sync failure is reported"
+    );
+    assert!(
+        temporary_lock_files(&directory).is_empty(),
+        "committed replacement must not leave a temporary lock file"
+    );
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
 fn upsert_package_replaces_only_the_matching_name() {
     let mut lock = FaberLock {
         packages: vec![package("alpha", "1.0.0"), package("beta", "1.0.0")],
