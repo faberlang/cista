@@ -107,15 +107,22 @@ fn write_and_replace(path: &Path, temporary_path: &Path, contents: &[u8]) -> Res
 
 /// Upsert one package record by name (exact version replace).
 pub fn upsert_package(lock: &mut FaberLock, package: LockedPackage) {
-    if let Some(existing) = lock
-        .packages
-        .iter_mut()
-        .find(|entry| entry.name == package.name)
-    {
-        *existing = package;
-        return;
+    let mut packages = Vec::with_capacity(lock.packages.len().max(1));
+    let mut inserted = false;
+    for existing in lock.packages.drain(..) {
+        if existing.name == package.name {
+            if !inserted {
+                packages.push(package.clone());
+                inserted = true;
+            }
+        } else {
+            packages.push(existing);
+        }
     }
-    lock.packages.push(package);
+    if !inserted {
+        packages.push(package);
+    }
+    lock.packages = packages;
 }
 
 /// Absolute path helper for lock records.

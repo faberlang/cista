@@ -72,3 +72,30 @@ fn upsert_package_replaces_only_the_matching_name() {
         vec![package("alpha", "2.0.0"), package("beta", "1.0.0")]
     );
 }
+
+#[test]
+fn upsert_package_removes_duplicate_matching_names() {
+    let mut duplicate = package("tool", "0.9.0");
+    duplicate.package_root = "/malformed/stale/tool".to_owned();
+    duplicate.target_manifest = "/malformed/stale/tool/cista.toml".to_owned();
+    let mut lock = FaberLock {
+        packages: vec![
+            package("alpha", "1.0.0"),
+            package("tool", "1.0.0"),
+            package("beta", "1.0.0"),
+            duplicate,
+            package("tool", "1.1.0"),
+        ],
+    };
+
+    upsert_package(&mut lock, package("tool", "2.0.0"));
+
+    assert_eq!(
+        lock.packages,
+        vec![
+            package("alpha", "1.0.0"),
+            package("tool", "2.0.0"),
+            package("beta", "1.0.0")
+        ]
+    );
+}
