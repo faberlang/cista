@@ -236,31 +236,7 @@ fn verify_disjoint_directories(source: &Path, destination: &Path) -> Result<(), 
             source.display()
         )
     })?;
-    let existing_parent = destination
-        .ancestors()
-        .find(|ancestor| ancestor.exists())
-        .ok_or_else(|| {
-            format!(
-                "destination directory has no existing parent: {}",
-                destination.display()
-            )
-        })?;
-    let suffix = destination.strip_prefix(existing_parent).map_err(|err| {
-        format!(
-            "failed to resolve destination directory {} from existing parent {}: {err}",
-            destination.display(),
-            existing_parent.display()
-        )
-    })?;
-    let destination = existing_parent
-        .canonicalize()
-        .map(|parent| parent.join(suffix))
-        .map_err(|err| {
-            format!(
-                "failed to resolve destination parent {}: {err}",
-                existing_parent.display()
-            )
-        })?;
+    let destination = resolve_path_against_existing_parent(destination, "destination directory")?;
     if source.starts_with(&destination) || destination.starts_with(&source) {
         return Err(format!(
             "source and destination directories must not overlap: {} and {}",
@@ -269,6 +245,32 @@ fn verify_disjoint_directories(source: &Path, destination: &Path) -> Result<(), 
         ));
     }
     Ok(())
+}
+
+pub(super) fn resolve_path_against_existing_parent(
+    path: &Path,
+    description: &str,
+) -> Result<PathBuf, String> {
+    let existing_parent = path
+        .ancestors()
+        .find(|ancestor| ancestor.exists())
+        .ok_or_else(|| format!("{description} has no existing parent: {}", path.display()))?;
+    let suffix = path.strip_prefix(existing_parent).map_err(|err| {
+        format!(
+            "failed to resolve {description} {} from existing parent {}: {err}",
+            path.display(),
+            existing_parent.display()
+        )
+    })?;
+    existing_parent
+        .canonicalize()
+        .map(|parent| parent.join(suffix))
+        .map_err(|err| {
+            format!(
+                "failed to resolve {description} parent {}: {err}",
+                existing_parent.display()
+            )
+        })
 }
 
 pub(super) fn copy_dir_new(source: &Path, destination: &Path) -> Result<(), String> {

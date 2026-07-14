@@ -453,6 +453,134 @@ fn install_rejects_transaction_suffix_versions_before_store_write() {
 }
 
 #[test]
+fn install_rejects_store_inside_package_source_before_store_write() {
+    let root = temp_root("install-store-inside-source");
+    let package = root.join("package");
+    let store = package.join(".store");
+    write_interfaces_only_package(&package, "example");
+
+    let error = run(InstallArgs {
+        path: Some(package.clone()),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("store inside package source must fail");
+
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("must not overlap package source")),
+        "missing source/store containment diagnostic: {error:?}"
+    );
+    assert!(
+        !store.exists(),
+        "rejected install must not create source-tree store artifacts"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn install_rejects_package_source_inside_package_store_root_before_store_write() {
+    let root = temp_root("install-source-inside-destination");
+    let store = root.join("store");
+    let package = store.join("example/0.1.0/source");
+    write_interfaces_only_package(&package, "example");
+
+    let error = run(InstallArgs {
+        path: Some(package.clone()),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("package source inside package destination must fail");
+
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("must not overlap package source")),
+        "missing source/destination containment diagnostic: {error:?}"
+    );
+    assert!(
+        !store.join("example/0.1.0/cista.toml").exists(),
+        "rejected install must not materialize a package snapshot over the source parent"
+    );
+    assert!(
+        !store
+            .join("example")
+            .read_dir()
+            .expect("read package namespace")
+            .any(|entry| entry
+                .expect("read package namespace entry")
+                .file_name()
+                .to_string_lossy()
+                .contains(".incoming-")),
+        "rejected install must not leave staging artifacts"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn install_meta_rejects_store_inside_package_source_before_dependency_write() {
+    let root = temp_root("meta-store-inside-source");
+    let packages = root.join("packages");
+    let dependency = packages.join("dependency");
+    let meta = packages.join("meta");
+    let store = meta.join(".store");
+    write_interfaces_only_package(&dependency, "dependency");
+    fs::create_dir_all(&meta).expect("create meta package");
+    fs::write(
+        meta.join("cista.toml"),
+        r#"[source]
+package = "meta"
+version = "0.1.0"
+role = "meta"
+
+[[dependencies]]
+package = "dependency"
+version = "0.1.0"
+path = "../dependency"
+"#,
+    )
+    .expect("write meta manifest");
+
+    let error = run(InstallArgs {
+        path: Some(meta.clone()),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("meta store inside package source must fail");
+
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("must not overlap package source")),
+        "missing meta source/store containment diagnostic: {error:?}"
+    );
+    assert!(
+        !store.exists(),
+        "rejected meta install must not create source-tree store artifacts"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn install_commit_failure_preserves_existing_snapshot() {
     let root = temp_root("install-commit-failure");
     let package = root.join("package");

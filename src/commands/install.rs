@@ -30,6 +30,11 @@ pub fn run(args: InstallArgs) -> CommandResult {
         .map_err(|error| vec![error])?;
     let store_root = shared::resolve_store_root(args.store.as_deref()).map_err(|err| vec![err])?;
     if let Some(meta) = manifest::read_meta_manifest(&manifest_path).map_err(|err| vec![err])? {
+        let meta_root = store_root
+            .join(&meta.source.package)
+            .join(&meta.source.version);
+        verify_install_store_disjoint(&package_root, &store_root, &meta_root)
+            .map_err(|err| vec![err])?;
         let install_locks =
             shared::acquire_store_mutation_locks(&store_root, None).map_err(|error| vec![error])?;
         let result = install_meta_package(&args, &package_root, &meta, &store_root);
@@ -43,6 +48,9 @@ pub fn run(args: InstallArgs) -> CommandResult {
         args.verify_target_build,
     )?;
     let project_root = resolve_project_root(args.project.as_deref())?;
+    let package_store_root = shared::package_store_root(&store_root, &checked.manifest);
+    verify_install_store_disjoint(&checked.package_root, &store_root, &package_store_root)
+        .map_err(|err| vec![err])?;
     let install_locks = shared::acquire_store_mutation_locks(&store_root, project_root.as_deref())
         .map_err(|error| vec![error])?;
     let mut installed = install_checked_package_transaction(&checked, &store_root)?;
@@ -80,6 +88,10 @@ fn install_meta_package(
             "meta package install does not rewrite a project lock; omit --project".to_owned(),
         ]);
     }
+    let meta_root = store_root
+        .join(&meta.source.package)
+        .join(&meta.source.version);
+    verify_install_store_disjoint(package_root, store_root, &meta_root).map_err(|err| vec![err])?;
     let mut seen = std::collections::BTreeSet::new();
     let mut checked_dependencies = Vec::with_capacity(meta.dependencies.len());
     for dependency in &meta.dependencies {
@@ -124,9 +136,6 @@ fn install_meta_package(
         }
     }
 
-    let meta_root = store_root
-        .join(&meta.source.package)
-        .join(&meta.source.version);
     let installed_meta = MetaManifest {
         source: meta.source.clone(),
         dependencies: meta
@@ -220,6 +229,8 @@ fn install_checked_package_transaction(
     store_root: &Path,
 ) -> Result<InstalledPackage, Vec<String>> {
     let package_store_root = shared::package_store_root(store_root, &checked.manifest);
+    verify_install_store_disjoint(&checked.package_root, store_root, &package_store_root)
+        .map_err(|err| vec![err])?;
     let staging = fs_util::stage_directory(&package_store_root).map_err(|err| vec![err])?;
     let result = prepare_package_snapshot(checked, &package_store_root, &staging);
     let installed = match result {
@@ -235,6 +246,43 @@ fn install_checked_package_transaction(
         paths: installed,
         replacement,
     })
+}
+
+fn verify_install_store_disjoint(
+    package_root: &Path,
+    store_root: &Path,
+    package_store_root: &Path,
+) -> Result<(), String> {
+    let package_root = package_root.canonicalize().map_err(|err| {
+        format!(
+            "failed to resolve package source directory {}: {err}",
+            package_root.display()
+        )
+    })?;
+    let store_root =
+        fs_util::resolve_path_against_existing_parent(store_root, "install store directory")?;
+    let package_store_root = fs_util::resolve_path_against_existing_parent(
+        package_store_root,
+        "install package destination directory",
+    )?;
+
+    if store_root.starts_with(&package_root) {
+        return Err(format!(
+            "install store directory must not overlap package source: {} is inside {}",
+            store_root.display(),
+            package_root.display()
+        ));
+    }
+    if package_store_root.starts_with(&package_root)
+        || package_root.starts_with(&package_store_root)
+    {
+        return Err(format!(
+            "install package destination must not overlap package source: {} and {}",
+            package_store_root.display(),
+            package_root.display()
+        ));
+    }
+    Ok(())
 }
 
 fn rollback_install(installed: &mut InstalledPackage, errors: Vec<String>) -> Vec<String> {
