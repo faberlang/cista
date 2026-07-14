@@ -80,6 +80,25 @@ fn write_stale_transaction_package(
     );
 }
 
+fn write_root_meta_manifest(root: &std::path::Path, package: &str, version: &str) {
+    fs::create_dir_all(root).expect("meta package root should be created");
+    fs::write(
+        root.join("cista.toml"),
+        format!(
+            r#"[source]
+package = "{package}"
+version = "{version}"
+role = "meta"
+
+[[dependencies]]
+package = "true"
+version = "1.0.0"
+"#
+        ),
+    )
+    .expect("meta manifest should be written");
+}
+
 #[test]
 fn reserved_cache_namespace_is_hidden_from_store_discovery() {
     let store = temporary_dir("cache-namespace");
@@ -100,6 +119,31 @@ fn reserved_cache_namespace_is_hidden_from_store_discovery() {
     assert!(error.contains("is not installed"), "{error}");
     let error = resolve_package_or_path(".cache@registry", Some(&store))
         .expect_err("inspect resolution must not accept cache namespace");
+    assert!(error.contains("is not installed"), "{error}");
+
+    fs::remove_dir_all(store).expect("temporary directory should be removed");
+}
+
+#[test]
+fn invalid_identity_segments_are_hidden_from_store_discovery() {
+    let store = temporary_dir("invalid-identity-segments");
+    write_installed_package(&store, "demo", "1.0.0");
+    write_installed_package(&store, "foo@bar", "1.0.0");
+    write_installed_package(&store, "tool", "1.0@0");
+
+    let installed = list_installed(&store).expect("list installed packages");
+
+    assert_eq!(installed.len(), 1);
+    assert_eq!(installed[0].name, "demo");
+    assert_eq!(installed[0].version, "1.0.0");
+    let error = find_installed(&store, "foo@bar@1.0.0")
+        .expect_err("invalid package segment must not satisfy exact lookup");
+    assert!(error.contains("is not installed"), "{error}");
+    let error = find_installed(&store, "tool@1.0@0")
+        .expect_err("invalid version segment must not satisfy exact lookup");
+    assert!(error.contains("is not installed"), "{error}");
+    let error = resolve_package_or_path("foo@bar@1.0.0", Some(&store))
+        .expect_err("inspect resolution must not accept invalid identity segments");
     assert!(error.contains("is not installed"), "{error}");
 
     fs::remove_dir_all(store).expect("temporary directory should be removed");
@@ -163,6 +207,45 @@ fn stale_install_transaction_directories_do_not_count_as_installed_versions() {
         .expect_err("inspect resolution must not accept stale transaction directories");
     assert!(error.contains("is not installed"), "{error}");
 
+    fs::remove_dir_all(store).expect("temporary directory should be removed");
+}
+
+#[test]
+fn verified_resolution_accepts_matching_root_meta_manifest_identity() {
+    let store = temporary_dir("resolve-meta-identity");
+    let package_root = store.join("coreutils/1.0.0");
+    write_root_meta_manifest(&package_root, "coreutils", "1.0.0");
+
+    let package = find_verified_installed(&store, "coreutils@1.0.0")
+        .expect("matching root meta manifest should verify");
+
+    assert_eq!(package.name, "coreutils");
+    assert_eq!(package.version, "1.0.0");
+    fs::remove_dir_all(store).expect("temporary directory should be removed");
+}
+
+#[test]
+fn verified_resolution_rejects_mismatched_root_meta_manifest_identity() {
+    let store = temporary_dir("resolve-meta-identity-mismatch");
+    let package_root = store.join("coreutils/1.0.0");
+    write_root_meta_manifest(&package_root, "impostor", "9.9.9");
+
+    let error = find_verified_installed(&store, "coreutils@1.0.0")
+        .expect_err("verified resolution should reject root meta identity mismatch");
+    assert!(
+        error.contains("installed package identity mismatch"),
+        "{error}"
+    );
+    assert!(error.contains("directory `coreutils@1.0.0`"), "{error}");
+    assert!(error.contains("root manifest"), "{error}");
+    assert!(error.contains("for `impostor@9.9.9`"), "{error}");
+
+    let error = resolve_package_or_path("coreutils@1.0.0", Some(&store))
+        .expect_err("inspect resolution should reject root meta identity mismatch");
+    assert!(
+        error.contains("installed package identity mismatch"),
+        "{error}"
+    );
     fs::remove_dir_all(store).expect("temporary directory should be removed");
 }
 

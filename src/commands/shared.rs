@@ -579,35 +579,23 @@ fn validate_store_segment(field: &str, value: &str, diagnostics: &mut Vec<String
     if value.is_empty() {
         return;
     }
-    if value.contains('/')
-        || value.contains('\\')
-        || value.contains('@')
-        || value == "."
-        || value == ".."
-        || value.starts_with('.')
-    {
-        diagnostics.push(format!(
-            "{field} `{value}` is not a valid package store path segment"
-        ));
-    }
-    if field == "source.version" && crate::store::is_install_transaction_directory(value) {
-        diagnostics.push(format!(
-            "{field} `{value}` collides with Cista install transaction directory namespace"
-        ));
+    let (package, version) = if field == "source.package" {
+        (value, "0")
+    } else {
+        ("package", value)
+    };
+    if let Err(errors) = crate::store::validate_store_identity(package, version) {
+        let needle = if field == "source.package" {
+            "source.package"
+        } else {
+            "source.version"
+        };
+        diagnostics.extend(errors.into_iter().filter(|error| error.starts_with(needle)));
     }
 }
 
 pub(super) fn validate_identity(package: &str, version: &str) -> Result<(), Vec<String>> {
-    let mut diagnostics = Vec::new();
-    require_non_empty("source.package", package, &mut diagnostics);
-    require_non_empty("source.version", version, &mut diagnostics);
-    validate_store_segment("source.package", package, &mut diagnostics);
-    validate_store_segment("source.version", version, &mut diagnostics);
-    if diagnostics.is_empty() {
-        Ok(())
-    } else {
-        Err(diagnostics)
-    }
+    crate::store::validate_store_identity(package, version)
 }
 
 fn require_non_empty(field: &str, value: &str, diagnostics: &mut Vec<String>) {
