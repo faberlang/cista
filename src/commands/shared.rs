@@ -589,6 +589,11 @@ fn validate_store_segment(field: &str, value: &str, diagnostics: &mut Vec<String
             "{field} `{value}` is not a valid package store path segment"
         ));
     }
+    if field == "source.version" && crate::store::is_install_transaction_directory(value) {
+        diagnostics.push(format!(
+            "{field} `{value}` collides with Cista install transaction directory namespace"
+        ));
+    }
 }
 
 pub(super) fn validate_identity(package: &str, version: &str) -> Result<(), Vec<String>> {

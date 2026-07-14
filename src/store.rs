@@ -102,7 +102,7 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
     Ok(packages)
 }
 
-fn is_install_transaction_directory(version: &str) -> bool {
+pub(crate) fn is_install_transaction_directory(version: &str) -> bool {
     [".incoming-", ".replaced-"]
         .iter()
         .any(|marker| has_transaction_suffix(version, marker))

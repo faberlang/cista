@@ -388,13 +388,17 @@ binding_policy = "generated"
 }
 
 fn write_interfaces_only_package(package: &Path, name: &str) {
+    write_interfaces_only_package_with_version(package, name, "0.1.0");
+}
+
+fn write_interfaces_only_package_with_version(package: &Path, name: &str, version: &str) {
     fs::create_dir_all(package.join("interfaces")).expect("create package interfaces");
     fs::write(
         package.join("cista.toml"),
         format!(
             r#"[source]
 package = "{name}"
-version = "0.1.0"
+version = "{version}"
 faber_min = "0.38.0"
 kind = "source"
 interfaces = "interfaces"
@@ -412,6 +416,40 @@ binding_policy = "generated"
         "functio lege() → nihil { redde nihil }\n",
     )
     .expect("write package interface");
+}
+
+#[test]
+fn install_rejects_transaction_suffix_versions_before_store_write() {
+    for version in ["1.0.0.incoming-123-1", "1.0.0.replaced-123-2"] {
+        let root = temp_root("transaction-version");
+        let package = root.join("package");
+        let store = root.join("store");
+        write_interfaces_only_package_with_version(&package, "example", version);
+
+        let error = run(InstallArgs {
+            path: Some(package),
+            package: None,
+            manifest: PathBuf::from("cista.toml"),
+            target_language: "rust".to_owned(),
+            store: Some(store.clone()),
+            registry: None,
+            project: None,
+            verify_target_build: false,
+        })
+        .expect_err("transaction-like source.version must fail validation");
+
+        assert!(
+            error.iter().any(|message| message
+                .contains("collides with Cista install transaction directory namespace")),
+            "missing transaction namespace diagnostic for {version}: {error:?}"
+        );
+        assert!(
+            !store.join("example").exists(),
+            "rejected install must not write a package namespace for {version}"
+        );
+
+        fs::remove_dir_all(root).expect("cleanup temp root");
+    }
 }
 
 #[test]

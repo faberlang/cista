@@ -184,6 +184,30 @@ fn manifest_shape_requires_bindings_for_manifest_policy() {
 }
 
 #[test]
+fn source_version_must_not_collide_with_transaction_directory_suffixes() {
+    for version in ["1.0.0.incoming-123-1", "1.0.0.replaced-123-2"] {
+        let mut manifest = buildable_manifest();
+        manifest.source.version = version.to_owned();
+        let mut diagnostics = Vec::new();
+
+        validate_manifest_shape(&manifest, &mut diagnostics);
+
+        assert!(
+            diagnostics.iter().any(|diagnostic| diagnostic
+                .contains("collides with Cista install transaction directory namespace")),
+            "missing transaction namespace diagnostic for {version}: {diagnostics:?}"
+        );
+        let identity_error = validate_identity("example", version)
+            .expect_err("identity validation must reject transaction-like versions");
+        assert!(
+            identity_error.iter().any(|diagnostic| diagnostic
+                .contains("collides with Cista install transaction directory namespace")),
+            "missing identity diagnostic for {version}: {identity_error:?}"
+        );
+    }
+}
+
+#[test]
 fn package_manifest_paths_must_be_relative_and_contained() {
     let root = temp_root("manifest-path-boundary");
     let package = root.join("package");
