@@ -5,55 +5,12 @@ use crate::manifest::{
     TargetMode, TargetSection,
 };
 use crate::project_manifest::{self, PROJECT_MANIFEST};
-use fs2::FileExt;
 
 use super::{env, fs, fs_util, registry, rust_target, shared, CommandResult, Path, PathBuf};
 
 /// Packages that are platform defaults: lock rewrite does not require a
 /// matching `faber.toml` `[dependencies]` entry.
 const PLATFORM_DEFAULT_PACKAGES: &[&str] = &["norma"];
-const INSTALL_LOCK_FILE: &str = ".cista-install.lock";
-
-struct InstallLocks {
-    _files: Vec<fs::File>,
-}
-
-fn acquire_install_locks(
-    store_root: &Path,
-    project_root: Option<&Path>,
-) -> Result<InstallLocks, String> {
-    let mut paths = vec![store_root.join(INSTALL_LOCK_FILE)];
-    if let Some(project_root) = project_root {
-        paths.push(project_root.join(INSTALL_LOCK_FILE));
-    }
-    paths.sort();
-    paths.dedup();
-
-    let mut files = Vec::with_capacity(paths.len());
-    for path in paths {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                format!(
-                    "failed to create install lock directory {}: {error}",
-                    parent.display()
-                )
-            })?;
-        }
-        let file = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(&path)
-            .map_err(|error| format!("failed to open install lock {}: {error}", path.display()))?;
-        file.lock_exclusive().map_err(|error| {
-            format!("failed to acquire install lock {}: {error}", path.display())
-        })?;
-        files.push(file);
-    }
-    Ok(InstallLocks { _files: files })
-}
-
 pub fn run(args: InstallArgs) -> CommandResult {
     let package_path = match (&args.path, &args.package) {
         (Some(path), None) => path.clone(),
@@ -74,7 +31,7 @@ pub fn run(args: InstallArgs) -> CommandResult {
     let store_root = shared::resolve_store_root(args.store.as_deref()).map_err(|err| vec![err])?;
     if let Some(meta) = manifest::read_meta_manifest(&manifest_path).map_err(|err| vec![err])? {
         let install_locks =
-            acquire_install_locks(&store_root, None).map_err(|error| vec![error])?;
+            shared::acquire_store_mutation_locks(&store_root, None).map_err(|error| vec![error])?;
         let result = install_meta_package(&args, &package_root, &meta, &store_root);
         drop(install_locks);
         return result;
@@ -86,8 +43,8 @@ pub fn run(args: InstallArgs) -> CommandResult {
         args.verify_target_build,
     )?;
     let project_root = resolve_project_root(args.project.as_deref())?;
-    let install_locks =
-        acquire_install_locks(&store_root, project_root.as_deref()).map_err(|error| vec![error])?;
+    let install_locks = shared::acquire_store_mutation_locks(&store_root, project_root.as_deref())
+        .map_err(|error| vec![error])?;
     let mut installed = install_checked_package_transaction(&checked, &store_root)?;
 
     if let Some(project_root) = project_root {

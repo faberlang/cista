@@ -2,8 +2,59 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Component;
 
 use crate::manifest::{read_manifest, BindingPolicy, CistaManifest, SourceKind, TargetMode};
+use fs2::FileExt;
 
 use super::{fs, rust_target, Path, PathBuf};
+
+pub(super) const STORE_MUTATION_LOCK_FILE: &str = ".cista-install.lock";
+
+pub(super) struct StoreMutationLocks {
+    _files: Vec<fs::File>,
+}
+
+pub(super) fn acquire_store_mutation_locks(
+    store_root: &Path,
+    project_root: Option<&Path>,
+) -> Result<StoreMutationLocks, String> {
+    let mut paths = vec![store_root.join(STORE_MUTATION_LOCK_FILE)];
+    if let Some(project_root) = project_root {
+        paths.push(project_root.join(STORE_MUTATION_LOCK_FILE));
+    }
+    paths.sort();
+    paths.dedup();
+
+    let mut files = Vec::with_capacity(paths.len());
+    for path in paths {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "failed to create store mutation lock directory {}: {error}",
+                    parent.display()
+                )
+            })?;
+        }
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|error| {
+                format!(
+                    "failed to open store mutation lock {}: {error}",
+                    path.display()
+                )
+            })?;
+        file.lock_exclusive().map_err(|error| {
+            format!(
+                "failed to acquire store mutation lock {}: {error}",
+                path.display()
+            )
+        })?;
+        files.push(file);
+    }
+    Ok(StoreMutationLocks { _files: files })
+}
 
 pub(super) struct CheckedPackage {
     pub package_root: PathBuf,

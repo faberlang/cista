@@ -1,11 +1,13 @@
 use crate::cli::PackageArg;
 use crate::store;
 
-use super::{fs, CommandResult};
+use super::{fs, shared, CommandResult};
 use std::io::ErrorKind;
 
 pub fn run(args: PackageArg) -> CommandResult {
     let store_root = store::store_root(args.store.as_deref()).map_err(|err| vec![err])?;
+    let mutation_locks =
+        shared::acquire_store_mutation_locks(&store_root, None).map_err(|error| vec![error])?;
     let package = store::find_installed(&store_root, &args.package).map_err(|err| vec![err])?;
     fs::remove_dir_all(&package.package_root).map_err(|err| {
         vec![format!(
@@ -24,6 +26,7 @@ pub fn run(args: PackageArg) -> CommandResult {
         package.version,
         package.package_root.display()
     );
+    drop(mutation_locks);
     Ok(())
 }
 

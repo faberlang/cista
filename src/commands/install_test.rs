@@ -29,8 +29,8 @@ fn faberlang_workspace() -> PathBuf {
 fn install_lock_excludes_other_handles() {
     let root = temp_root("install-lock");
     let store = root.join("store");
-    let lock = acquire_install_locks(&store, None).expect("acquire install lock");
-    let lock_path = store.join(INSTALL_LOCK_FILE);
+    let lock = shared::acquire_store_mutation_locks(&store, None).expect("acquire install lock");
+    let lock_path = store.join(shared::STORE_MUTATION_LOCK_FILE);
     let contender = OpenOptions::new()
         .read(true)
         .write(true)
