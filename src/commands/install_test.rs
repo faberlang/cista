@@ -464,6 +464,51 @@ fn install_commit_failure_preserves_existing_snapshot() {
 }
 
 #[test]
+fn install_finalize_failure_after_backup_disposal_preserves_committed_snapshot() {
+    let root = temp_root("install-finalize-post-commit");
+    let package = root.join("package");
+    let store = root.join("store");
+    write_interfaces_only_package(&package, "example");
+
+    let installed = store.join("example/0.1.0");
+    fs::create_dir_all(installed.join("interfaces")).expect("create old interfaces");
+    fs::write(installed.join("interfaces/old.fab"), "old interface\n")
+        .expect("write old interface");
+
+    fs_util::inject_finalize_sync_failure(
+        &installed
+            .canonicalize()
+            .expect("canonical installed package path"),
+    );
+    let error = run(InstallArgs {
+        path: Some(package),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("post-commit finalize failure should still report error");
+    assert!(error
+        .iter()
+        .any(|message| message.contains("injected failure after committing replacement")));
+
+    assert_eq!(
+        fs::read_to_string(installed.join("interfaces/example.fab"))
+            .expect("read committed interface"),
+        "functio lege() \u{2192} nihil { redde nihil }\n"
+    );
+    assert!(
+        !installed.join("interfaces/old.fab").exists(),
+        "post-commit finalize failure must not roll back a committed package snapshot"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn install_lock_failure_rolls_back_new_store_snapshot() {
     let root = temp_root("install-lock-failure");
     let package = root.join("package");
