@@ -58,17 +58,23 @@ fn install_remote_archive(
                 manifest::MANIFEST_FILE
             ));
         }
-        let (archive_name, archive_version) = match manifest::read_meta_manifest(&manifest_path)? {
-            Some(manifest) => (manifest.source.package, manifest.source.version),
-            None => {
-                let manifest = manifest::read_manifest(&manifest_path)?;
-                (manifest.source.package, manifest.source.version)
+        if let Some(meta) = manifest::read_meta_manifest(&manifest_path)? {
+            if meta.source.package != name || meta.source.version != version {
+                return Err(format!(
+                    "remote package `{name}@{version}` archive declares `{}@{}`",
+                    meta.source.package, meta.source.version
+                ));
             }
-        };
-        if archive_name != name || archive_version != version {
-            return Err(format!(
-                "remote package `{name}@{version}` archive declares `{archive_name}@{archive_version}`"
-            ));
+            validate_cached_meta_package(&meta)?;
+        } else {
+            let staged_manifest = manifest::read_manifest(&manifest_path)?;
+            if staged_manifest.source.package != name || staged_manifest.source.version != version {
+                return Err(format!(
+                    "remote package `{name}@{version}` archive declares `{}@{}`",
+                    staged_manifest.source.package, staged_manifest.source.version
+                ));
+            }
+            validate_cached_package(&staging)?;
         }
         fs_util::copy_dir_clean(&staging, destination)
     })();
@@ -163,12 +169,26 @@ pub(super) fn fetch_to_cache(
             registry.display()
         ));
     }
-    let manifest = manifest::read_manifest(&source_manifest)?;
-    if manifest.source.package != name || manifest.source.version != version {
-        return Err(format!(
-            "registry package `{name}@{version}` declares `{}@{}`",
-            manifest.source.package, manifest.source.version
-        ));
+    match manifest::read_meta_manifest(&source_manifest)? {
+        Some(meta) => {
+            if meta.source.package != name || meta.source.version != version {
+                return Err(format!(
+                    "registry package `{name}@{version}` declares `{}@{}`",
+                    meta.source.package, meta.source.version
+                ));
+            }
+            validate_cached_meta_package(&meta)?;
+        }
+        None => {
+            let manifest = manifest::read_manifest(&source_manifest)?;
+            if manifest.source.package != name || manifest.source.version != version {
+                return Err(format!(
+                    "registry package `{name}@{version}` declares `{}@{}`",
+                    manifest.source.package, manifest.source.version
+                ));
+            }
+            validate_cached_package(&source)?;
+        }
     }
     let store_root = store::store_root(explicit_store)?;
     let destination = store_root
@@ -178,6 +198,40 @@ pub(super) fn fetch_to_cache(
         .join(&version);
     fs_util::copy_dir_clean(&source, &destination)?;
     Ok(destination)
+}
+
+fn validate_cached_package(package_root: &Path) -> Result<(), String> {
+    shared::validate_package(
+        package_root,
+        Path::new(manifest::MANIFEST_FILE),
+        None,
+        false,
+    )
+    .map(|_| ())
+    .map_err(|diagnostics| diagnostics.join("; "))
+}
+
+fn validate_cached_meta_package(meta: &manifest::MetaManifest) -> Result<(), String> {
+    shared::validate_identity(&meta.source.package, &meta.source.version)
+        .map_err(|diagnostics| diagnostics.join("; "))?;
+    if meta.dependencies.is_empty() {
+        return Err("meta package requires at least one [[dependencies]] row".to_owned());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for dependency in &meta.dependencies {
+        let identity = format!("{}@{}", dependency.package, dependency.version);
+        if !seen.insert(identity.clone()) {
+            return Err(format!("duplicate meta dependency `{identity}`"));
+        }
+        shared::validate_identity(&dependency.package, &dependency.version)
+            .map_err(|diagnostics| diagnostics.join("; "))?;
+        if dependency.path.is_some() {
+            return Err(format!(
+                "cached meta dependency `{identity}` must not carry a source-relative path"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn verify_registry_publish_path(registry: &Path, package: &Path) -> Result<(), String> {

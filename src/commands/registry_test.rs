@@ -170,6 +170,124 @@ binding_policy = "generated"
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
 
+#[test]
+fn invalid_remote_package_preserves_cached_package() {
+    let root = temp_root().join("invalid-remote-package");
+    let source = root.join("source");
+    let destination = root.join("cached");
+    fs::create_dir_all(&source).expect("create source");
+    fs::create_dir_all(&destination).expect("create cached package");
+    fs::write(
+        source.join("cista.toml"),
+        r#"[source]
+package = "tool"
+version = "1.2.3"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "missing-interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#,
+    )
+    .expect("write invalid manifest");
+    fs::write(destination.join("payload"), "last good package").expect("seed cache");
+
+    let archive = archive_directory(&source).expect("archive invalid replacement");
+    let error = install_remote_archive(&archive, &destination, "tool", "1.2.3")
+        .expect_err("structurally invalid package should fail closed");
+
+    assert!(error.contains("source.interfaces"), "{error}");
+    assert_eq!(
+        fs::read_to_string(destination.join("payload")).expect("read preserved cache"),
+        "last good package"
+    );
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn invalid_local_registry_package_preserves_cached_package() {
+    let root = temp_root().join("invalid-local-package");
+    let registry_package = root.join("registry/tool/1.2.3");
+    let cached_package = root.join("store/.cache/registry/tool/1.2.3");
+    fs::create_dir_all(&registry_package).expect("create registry package");
+    fs::create_dir_all(&cached_package).expect("create cached package");
+    fs::write(
+        registry_package.join("cista.toml"),
+        r#"[source]
+package = "tool"
+version = "1.2.3"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "missing-interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#,
+    )
+    .expect("write invalid manifest");
+    fs::write(cached_package.join("payload"), "last good package").expect("seed cache");
+
+    let error = fetch_to_cache(
+        "tool@1.2.3",
+        Some(&root.join("registry")),
+        Some(&root.join("store")),
+    )
+    .expect_err("structurally invalid package should fail closed");
+
+    assert!(error.contains("source.interfaces"), "{error}");
+    assert_eq!(
+        fs::read_to_string(cached_package.join("payload")).expect("read preserved cache"),
+        "last good package"
+    );
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn local_registry_meta_dependency_paths_are_not_cached_as_trusted() {
+    let root = temp_root().join("invalid-local-meta");
+    let registry_package = root.join("registry/coreutils/1.0.0");
+    let cached_package = root.join("store/.cache/registry/coreutils/1.0.0");
+    fs::create_dir_all(&registry_package).expect("create registry package");
+    fs::create_dir_all(&cached_package).expect("create cached package");
+    fs::write(
+        registry_package.join("cista.toml"),
+        r#"[source]
+package = "coreutils"
+version = "1.0.0"
+role = "meta"
+
+[[dependencies]]
+package = "true"
+version = "1.0.0"
+path = "../true"
+"#,
+    )
+    .expect("write invalid meta manifest");
+    fs::write(cached_package.join("payload"), "last good meta").expect("seed cache");
+
+    let error = fetch_to_cache(
+        "coreutils@1.0.0",
+        Some(&root.join("registry")),
+        Some(&root.join("store")),
+    )
+    .expect_err("meta dependency paths should fail closed for cache");
+
+    assert!(
+        error.contains("must not carry a source-relative path"),
+        "{error}"
+    );
+    assert_eq!(
+        fs::read_to_string(cached_package.join("payload")).expect("read preserved cache"),
+        "last good meta"
+    );
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
 #[cfg(unix)]
 #[test]
 fn local_registry_package_symlink_cannot_escape_registry() {
