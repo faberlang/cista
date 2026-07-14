@@ -376,11 +376,18 @@ fn walk_for_manifest(
 
 /// Validate all installed target manifests discovered for a package.
 pub fn validate_installed_identity(package: &InstalledPackage) -> Result<(), String> {
-    validate_root_manifest(package)?;
-    validate_target_manifest_tree(package, &package.targets_dir)
+    let has_root_identity = validate_root_manifest(package)?;
+    let has_target_identity = validate_target_manifest_tree(package, &package.targets_dir)?;
+    if has_root_identity || has_target_identity {
+        return Ok(());
+    }
+    Err(format!(
+        "installed package identity missing: directory `{}@{}` contains no root or target cista.toml identity evidence",
+        package.name, package.version
+    ))
 }
 
-fn validate_root_manifest(package: &InstalledPackage) -> Result<(), String> {
+fn validate_root_manifest(package: &InstalledPackage) -> Result<bool, String> {
     let path = package.package_root.join(MANIFEST_FILE);
     match fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -402,19 +409,20 @@ fn validate_root_manifest(package: &InstalledPackage) -> Result<(), String> {
                 path.display()
             ));
         }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(err) => return Err(format!("failed to inspect {}: {err}", path.display())),
     }
 
     if let Some(meta) = read_meta_manifest(&path)? {
         validate_meta_manifest_identity(package, &path, &meta)?;
-        return Ok(());
+        return Ok(true);
     }
     let manifest = read_manifest(&path)?;
-    validate_manifest_identity(package, &path, &manifest)
+    validate_manifest_identity(package, &path, &manifest)?;
+    Ok(true)
 }
 
-fn validate_target_manifest_tree(package: &InstalledPackage, dir: &Path) -> Result<(), String> {
+fn validate_target_manifest_tree(package: &InstalledPackage, dir: &Path) -> Result<bool, String> {
     match fs::symlink_metadata(dir) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             return Err(format!(
@@ -423,11 +431,12 @@ fn validate_target_manifest_tree(package: &InstalledPackage, dir: &Path) -> Resu
             ));
         }
         Ok(metadata) if metadata.is_dir() => {}
-        Ok(_) => return Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Ok(_) => return Ok(false),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(err) => return Err(format!("failed to inspect {}: {err}", dir.display())),
     }
 
+    let mut found_identity = false;
     let entries =
         fs::read_dir(dir).map_err(|err| format!("failed to read {}: {err}", dir.display()))?;
     for entry in entries {
@@ -444,12 +453,13 @@ fn validate_target_manifest_tree(package: &InstalledPackage, dir: &Path) -> Resu
             ));
         }
         if file_type.is_dir() {
-            validate_target_manifest_tree(package, &path)?;
+            found_identity |= validate_target_manifest_tree(package, &path)?;
         } else if file_type.is_file()
             && path.file_name().and_then(|name| name.to_str()) == Some(MANIFEST_FILE)
         {
             let manifest = read_manifest(&path)?;
             validate_manifest_identity(package, &path, &manifest)?;
+            found_identity = true;
         } else if !file_type.is_file() {
             return Err(format!(
                 "installed package contains unsupported entry {}",
@@ -457,7 +467,7 @@ fn validate_target_manifest_tree(package: &InstalledPackage, dir: &Path) -> Resu
             ));
         }
     }
-    Ok(())
+    Ok(found_identity)
 }
 
 pub fn validate_manifest_identity(

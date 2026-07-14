@@ -123,12 +123,43 @@ fn remove_rejects_installed_identity_mismatch_without_deleting_package() {
 }
 
 #[test]
+fn remove_rejects_missing_installed_identity_without_deleting_package() {
+    let root = fixture("missing-identity");
+    let store = root.join("store");
+    let package = store.join("tool/1.2.3");
+    fs::create_dir_all(package.join("interfaces")).expect("create package interfaces");
+    fs::write(package.join("payload"), "installed payload").expect("write package payload");
+
+    let error = run(PackageArg {
+        package: "tool@1.2.3".to_owned(),
+        store: Some(store),
+        registry: None,
+        registry_url: None,
+    })
+    .expect_err("missing identity evidence must reject destructive remove");
+
+    assert!(error
+        .iter()
+        .any(|message| message.contains("installed package identity missing")));
+    assert!(
+        package.is_dir(),
+        "failed removal must preserve package directory without identity evidence"
+    );
+    assert!(
+        package.join("payload").is_file(),
+        "failed removal must preserve package payload without identity evidence"
+    );
+    fs::remove_dir_all(root).expect("remove fixture");
+}
+
+#[test]
 fn remove_waits_for_store_mutation_lock() {
     let root = fixture("locked-remove");
     let store = root.join("store");
     let package = store.join("tool/1.2.3");
     fs::create_dir_all(&package).expect("create package version");
     fs::write(package.join("payload"), "installed").expect("write package payload");
+    write_target_manifest(&package.join("targets/rust/test-triple"), "tool", "1.2.3");
     let lock = shared::acquire_store_mutation_locks(&store, None).expect("hold store lock");
 
     let expected_lock_path = store.join(shared::STORE_MUTATION_LOCK_FILE);

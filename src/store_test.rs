@@ -374,6 +374,48 @@ fn installed_resolution_rejects_mismatched_target_manifest_identity() {
     fs::remove_dir_all(store).expect("temporary directory should be removed");
 }
 
+#[test]
+fn installed_resolution_rejects_no_manifest_package_root() {
+    let store = temporary_dir("resolve-missing-identity");
+    let package_root = store.join("demo/1.0.0");
+    fs::create_dir_all(package_root.join("interfaces")).expect("interfaces should be created");
+    fs::write(package_root.join("payload"), "installed payload")
+        .expect("payload should be written");
+
+    let error = find_verified_installed(&store, "demo@1.0.0")
+        .expect_err("verified resolution should reject missing identity evidence");
+
+    assert!(
+        error.contains("installed package identity missing"),
+        "{error}"
+    );
+    assert!(error.contains("directory `demo@1.0.0`"), "{error}");
+    assert!(
+        error.contains("no root or target cista.toml identity evidence"),
+        "{error}"
+    );
+    fs::remove_dir_all(store).expect("temporary directory should be removed");
+}
+
+#[test]
+fn installed_resolution_accepts_matching_target_manifest_identity() {
+    let store = temporary_dir("resolve-target-identity");
+    let package_root = store.join("demo/1.0.0");
+    fs::create_dir_all(package_root.join("interfaces")).expect("interfaces should be created");
+    write_target_manifest(
+        &package_root.join("targets/rust/test-triple"),
+        "demo",
+        "1.0.0",
+    );
+
+    let package = find_verified_installed(&store, "demo@1.0.0")
+        .expect("matching target manifest should verify");
+
+    assert_eq!(package.name, "demo");
+    assert_eq!(package.version, "1.0.0");
+    fs::remove_dir_all(store).expect("temporary directory should be removed");
+}
+
 #[cfg(unix)]
 #[test]
 fn package_directory_name_rejects_non_utf8_input() {
