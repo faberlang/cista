@@ -1,6 +1,6 @@
 use super::*;
 use crate::cli::InstallArgs;
-use crate::faber_lock::read_lock;
+use crate::faber_lock::{inject_write_and_replace_fault, read_lock, WriteAndReplaceFault};
 use fs2::FileExt;
 use std::fs::OpenOptions;
 use std::process::Command;
@@ -773,6 +773,71 @@ example = "0.1.0"
         "old interface\n"
     );
     assert!(!installed.join("interfaces/example.fab").exists());
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn install_lock_post_rename_sync_failure_keeps_store_aligned_with_committed_lock() {
+    let root = temp_root("install-lock-post-rename-sync-failure");
+    let package = root.join("package");
+    let project = root.join("project");
+    let store = root.join("store");
+    write_interfaces_only_package(&package, "example");
+    let installed = store.join("example/0.1.0");
+    fs::create_dir_all(installed.join("interfaces")).expect("create existing snapshot");
+    fs::write(installed.join("interfaces/old.fab"), "old interface\n")
+        .expect("write existing interface");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join(PROJECT_MANIFEST),
+        r#"[package]
+name = "app"
+version = "0.1.0"
+edition = "2026"
+
+[dependencies]
+example = "0.1.0"
+"#,
+    )
+    .expect("write project manifest");
+
+    inject_write_and_replace_fault(WriteAndReplaceFault::SyncParent);
+    let error = run(InstallArgs {
+        path: Some(package),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: Some(project.clone()),
+        verify_target_build: false,
+    })
+    .expect_err("post-rename lock sync failure should still report install error");
+
+    assert!(error.iter().any(|message| message
+        .contains("injected failure while syncing parent directory after replacing")));
+    let lock = read_lock(&project.join(faber_lock::LOCK_FILE)).expect("read committed lock");
+    let locked = lock
+        .packages
+        .iter()
+        .find(|package| package.name == "example")
+        .expect("example lock record");
+    assert_eq!(
+        PathBuf::from(&locked.package_root),
+        installed
+            .canonicalize()
+            .expect("canonical installed snapshot")
+    );
+    assert_eq!(
+        fs::read_to_string(installed.join("interfaces/example.fab"))
+            .expect("read committed interface"),
+        "functio lege() \u{2192} nihil { redde nihil }\n"
+    );
+    assert!(
+        !installed.join("interfaces/old.fab").exists(),
+        "committed lock must not point at a rolled-back store snapshot"
+    );
 
     fs::remove_dir_all(root).expect("cleanup temp root");
 }

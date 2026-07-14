@@ -58,8 +58,15 @@ pub fn run(args: InstallArgs) -> CommandResult {
     let mut installed = install_checked_package_transaction(&checked, &store_root)?;
 
     if let Some(project_root) = project_root {
-        if let Err(errors) = rewrite_project_lock(&project_root, &checked, &installed.paths) {
-            return Err(rollback_install(&mut installed, errors));
+        if let Err(error) = rewrite_project_lock(&project_root, &checked, &installed.paths) {
+            if error.lock_committed {
+                let mut errors = error.messages;
+                if let Err(finalize_error) = installed.replacement.finalize() {
+                    errors.push(finalize_error);
+                }
+                return Err(errors);
+            }
+            return Err(rollback_install(&mut installed, error.messages));
         }
     }
 
@@ -583,17 +590,17 @@ fn rewrite_project_lock(
     project_root: &Path,
     checked: &shared::CheckedPackage,
     installed: &InstalledPaths,
-) -> CommandResult {
+) -> Result<(), LockRewriteError> {
     let project_manifest_path = project_root.join(PROJECT_MANIFEST);
-    let project_manifest =
-        project_manifest::read_project_manifest(&project_manifest_path).map_err(|err| vec![err])?;
+    let project_manifest = project_manifest::read_project_manifest(&project_manifest_path)
+        .map_err(LockRewriteError::rollback_safe)?;
     let package = &checked.manifest.source.package;
     let version = &checked.manifest.source.version;
 
     let is_platform_default = PLATFORM_DEFAULT_PACKAGES.contains(&package.as_str());
     if !is_platform_default {
         project_manifest::require_exact_dependency(&project_manifest, package, version)
-            .map_err(|err| vec![err])?;
+            .map_err(LockRewriteError::rollback_safe)?;
     }
 
     let crate_name = checked
@@ -617,9 +624,15 @@ fn rewrite_project_lock(
     });
 
     let lock_path = faber_lock::lock_path(project_root);
-    let mut lock = faber_lock::read_lock(&lock_path).map_err(|err| vec![err])?;
+    let mut lock = faber_lock::read_lock(&lock_path).map_err(LockRewriteError::rollback_safe)?;
     faber_lock::upsert_package(&mut lock, record);
-    faber_lock::write_lock(&lock_path, &lock).map_err(|err| vec![err])?;
+    faber_lock::write_lock_with_commit_state(&lock_path, &lock).map_err(|err| {
+        let lock_committed = err.committed();
+        LockRewriteError {
+            messages: vec![err.into_message()],
+            lock_committed,
+        }
+    })?;
     println!(
         "updated lock: {}{}",
         lock_path.display(),
@@ -630,6 +643,20 @@ fn rewrite_project_lock(
         }
     );
     Ok(())
+}
+
+struct LockRewriteError {
+    messages: Vec<String>,
+    lock_committed: bool,
+}
+
+impl LockRewriteError {
+    fn rollback_safe(message: String) -> Self {
+        Self {
+            messages: vec![message],
+            lock_committed: false,
+        }
+    }
 }
 
 #[cfg(test)]

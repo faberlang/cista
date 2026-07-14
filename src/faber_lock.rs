@@ -92,15 +92,46 @@ pub fn read_lock(path: &Path) -> Result<FaberLock, String> {
 
 /// Write a lockfile with stable package ordering.
 pub fn write_lock(path: &Path, lock: &FaberLock) -> Result<(), String> {
+    write_lock_with_commit_state(path, lock).map_err(LockWriteError::into_message)
+}
+
+pub(crate) struct LockWriteError {
+    message: String,
+    committed: bool,
+}
+
+impl LockWriteError {
+    fn new(message: String, committed: bool) -> Self {
+        Self { message, committed }
+    }
+
+    pub(crate) fn committed(&self) -> bool {
+        self.committed
+    }
+
+    pub(crate) fn into_message(self) -> String {
+        self.message
+    }
+}
+
+pub(crate) fn write_lock_with_commit_state(
+    path: &Path,
+    lock: &FaberLock,
+) -> Result<(), LockWriteError> {
     let mut ordered = lock.clone();
     ordered
         .packages
         .sort_by(|a, b| a.name.cmp(&b.name).then(a.version.cmp(&b.version)));
-    let contents = toml::to_string_pretty(&ordered)
-        .map_err(|err| format!("failed to render {}: {err}", path.display()))?;
+    let contents = toml::to_string_pretty(&ordered).map_err(|err| {
+        LockWriteError::new(format!("failed to render {}: {err}", path.display()), false)
+    })?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|err| {
+            LockWriteError::new(
+                format!("failed to create {}: {err}", parent.display()),
+                false,
+            )
+        })?;
     }
     let temporary_path = temporary_lock_path(path);
     write_and_replace(path, &temporary_path, contents.as_bytes())
@@ -116,19 +147,31 @@ fn temporary_lock_path(path: &Path) -> PathBuf {
     path.with_file_name(temporary_name)
 }
 
-fn write_and_replace(path: &Path, temporary_path: &Path, contents: &[u8]) -> Result<(), String> {
+fn write_and_replace(
+    path: &Path,
+    temporary_path: &Path,
+    contents: &[u8],
+) -> Result<(), LockWriteError> {
     #[cfg(test)]
     if should_fail_write_and_replace(WriteAndReplaceFault::BeforeCreate) {
-        return Err(format!(
-            "injected failure before creating {}",
-            temporary_path.display()
+        return Err(LockWriteError::new(
+            format!(
+                "injected failure before creating {}",
+                temporary_path.display()
+            ),
+            false,
         ));
     }
     let mut temporary = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(temporary_path)
-        .map_err(|err| format!("failed to create {}: {err}", temporary_path.display()))?;
+        .map_err(|err| {
+            LockWriteError::new(
+                format!("failed to create {}: {err}", temporary_path.display()),
+                false,
+            )
+        })?;
     #[cfg(test)]
     let write_result = if should_fail_write_and_replace(WriteAndReplaceFault::Write) {
         Err(format!(
@@ -147,6 +190,7 @@ fn write_and_replace(path: &Path, temporary_path: &Path, contents: &[u8]) -> Res
         .and_then(|()| temporary.sync_all())
         .map_err(|err| format!("failed to write {}: {err}", temporary_path.display()));
     drop(temporary);
+    let mut committed = false;
     let result = write_result.and_then(|()| {
         #[cfg(test)]
         if should_fail_write_and_replace(WriteAndReplaceFault::Rename) {
@@ -157,6 +201,7 @@ fn write_and_replace(path: &Path, temporary_path: &Path, contents: &[u8]) -> Res
         }
         fs::rename(temporary_path, path)
             .map_err(|err| format!("failed to replace {}: {err}", path.display()))?;
+        committed = true;
         #[cfg(test)]
         if should_fail_write_and_replace(WriteAndReplaceFault::SyncParent) {
             return Err(format!(
@@ -171,19 +216,25 @@ fn write_and_replace(path: &Path, temporary_path: &Path, contents: &[u8]) -> Res
         Err(operation_error) => {
             #[cfg(test)]
             if should_fail_write_and_replace(WriteAndReplaceFault::Cleanup) {
-                return Err(format!(
-                    "{operation_error}; failed to remove {}: injected cleanup failure",
-                    temporary_path.display()
+                return Err(LockWriteError::new(
+                    format!(
+                        "{operation_error}; failed to remove {}: injected cleanup failure",
+                        temporary_path.display()
+                    ),
+                    committed,
                 ));
             }
             match fs::remove_file(temporary_path) {
-                Ok(()) => Err(operation_error),
+                Ok(()) => Err(LockWriteError::new(operation_error, committed)),
                 Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {
-                    Err(operation_error)
+                    Err(LockWriteError::new(operation_error, committed))
                 }
-                Err(cleanup_error) => Err(format!(
-                    "{operation_error}; failed to remove {}: {cleanup_error}",
-                    temporary_path.display()
+                Err(cleanup_error) => Err(LockWriteError::new(
+                    format!(
+                        "{operation_error}; failed to remove {}: {cleanup_error}",
+                        temporary_path.display()
+                    ),
+                    committed,
                 )),
             }
         }
