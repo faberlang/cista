@@ -19,6 +19,32 @@ fn fixture(name: &str) -> std::path::PathBuf {
     ))
 }
 
+fn write_target_manifest(root: &std::path::Path, package: &str, version: &str) {
+    fs::create_dir_all(root).expect("create target manifest directory");
+    fs::write(
+        root.join("cista.toml"),
+        format!(
+            r#"[source]
+package = "{package}"
+version = "{version}"
+faber_min = "0.38.0"
+kind = "artifact"
+role = "bin"
+interfaces = "../../../interfaces"
+
+[target]
+language = "rust"
+mode = "artifact"
+binding_policy = "generated"
+artifact = "tool"
+crate = "{package}"
+triple = "test-triple"
+"#
+        ),
+    )
+    .expect("write target manifest");
+}
+
 #[test]
 fn empty_package_name_directory_is_removed() {
     let name_dir = fixture("empty");
@@ -62,6 +88,36 @@ fn remove_does_not_delete_reserved_cache_namespace() {
     assert!(
         cached.join("archive").is_file(),
         "failed removal must preserve registry cache payload"
+    );
+    fs::remove_dir_all(root).expect("remove fixture");
+}
+
+#[test]
+fn remove_rejects_installed_identity_mismatch_without_deleting_package() {
+    let root = fixture("identity-mismatch");
+    let store = root.join("store");
+    let package = store.join("tool/1.2.3");
+    fs::create_dir_all(package.join("interfaces")).expect("create package interfaces");
+    write_target_manifest(
+        &package.join("targets/rust/test-triple"),
+        "impostor",
+        "9.9.9",
+    );
+
+    let error = run(PackageArg {
+        package: "tool@1.2.3".to_owned(),
+        store: Some(store),
+        registry: None,
+        registry_url: None,
+    })
+    .expect_err("identity mismatch must reject destructive remove");
+
+    assert!(error
+        .iter()
+        .any(|message| message.contains("installed package identity mismatch")));
+    assert!(
+        package.is_dir(),
+        "failed removal must preserve mismatched package directory"
     );
     fs::remove_dir_all(root).expect("remove fixture");
 }
