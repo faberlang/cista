@@ -51,7 +51,10 @@ fn fetch_to_cache_waits_for_store_mutation_lock() {
     write_interfaces_only_registry_package(&registry_package, "tool", "1.2.3");
 
     let lock = shared::acquire_store_mutation_locks(&store, None).expect("hold store lock");
-    let cache = store.join(".cache/registry/tool/1.2.3");
+    let cache = store
+        .canonicalize()
+        .expect("canonicalize store root")
+        .join(".cache/registry/tool/1.2.3");
     let (done_tx, done_rx) = mpsc::channel();
     let fetch_store = store.clone();
     let handle = thread::spawn(move || {

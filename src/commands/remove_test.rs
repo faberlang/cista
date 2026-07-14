@@ -162,7 +162,10 @@ fn remove_waits_for_store_mutation_lock() {
     write_target_manifest(&package.join("targets/rust/test-triple"), "tool", "1.2.3");
     let lock = shared::acquire_store_mutation_locks(&store, None).expect("hold store lock");
 
-    let expected_lock_path = store.join(shared::STORE_MUTATION_LOCK_FILE);
+    let expected_lock_path = store
+        .canonicalize()
+        .expect("canonicalize store root")
+        .join(shared::STORE_MUTATION_LOCK_FILE);
     let (attempt_tx, attempt_rx) = mpsc::channel();
     let _attempt_observer =
         shared::observe_store_lock_attempt(Arc::new(move |lock_path, lock_file| {
