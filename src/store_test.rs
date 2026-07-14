@@ -1,8 +1,8 @@
 use std::fs;
 
 use super::{
-    find_verified_installed, list_package_files, read_any_target_manifest, resolve_package_or_path,
-    utf8_directory_name, InstalledPackage,
+    find_installed, find_verified_installed, list_installed, list_package_files,
+    read_any_target_manifest, resolve_package_or_path, utf8_directory_name, InstalledPackage,
 };
 
 fn temporary_dir(label: &str) -> std::path::PathBuf {
@@ -52,6 +52,93 @@ triple = "test-triple"
         ),
     )
     .expect("target manifest should be written");
+}
+
+fn write_installed_package(store: &std::path::Path, package: &str, version: &str) {
+    let package_root = store.join(package).join(version);
+    fs::create_dir_all(package_root.join("interfaces")).expect("interfaces should be created");
+    write_target_manifest(
+        &package_root.join("targets/rust/test-triple"),
+        package,
+        version,
+    );
+}
+
+fn write_stale_transaction_package(
+    store: &std::path::Path,
+    package: &str,
+    directory_version: &str,
+    manifest_version: &str,
+) {
+    let package_root = store.join(package).join(directory_version);
+    fs::create_dir_all(package_root.join("interfaces"))
+        .expect("stale interfaces should be created");
+    write_target_manifest(
+        &package_root.join("targets/rust/test-triple"),
+        package,
+        manifest_version,
+    );
+}
+
+#[test]
+fn stale_install_transaction_directories_are_hidden_from_store_discovery() {
+    let store = temporary_dir("stale-transactions");
+    write_installed_package(&store, "demo", "1.0.0");
+    write_stale_transaction_package(&store, "demo", "1.0.0.incoming-123-1", "1.0.0");
+    write_stale_transaction_package(&store, "demo", "1.0.0.replaced-123-2", "1.0.0");
+
+    let installed = list_installed(&store).expect("list installed packages");
+
+    assert_eq!(installed.len(), 1);
+    assert_eq!(installed[0].name, "demo");
+    assert_eq!(installed[0].version, "1.0.0");
+    assert_eq!(
+        find_installed(&store, "demo")
+            .expect("unversioned package should resolve without stale ambiguity")
+            .version,
+        "1.0.0"
+    );
+    assert_eq!(
+        find_verified_installed(&store, "demo@1.0.0")
+            .expect("verified package should resolve")
+            .version,
+        "1.0.0"
+    );
+    match resolve_package_or_path("demo", Some(&store)).expect("inspect target should resolve") {
+        super::ResolvedInspectTarget::Installed(package) => {
+            assert_eq!(package.version, "1.0.0");
+        }
+        super::ResolvedInspectTarget::Path(path) => {
+            panic!(
+                "package name resolved as unexpected path {}",
+                path.display()
+            );
+        }
+    }
+
+    fs::remove_dir_all(store).expect("temporary directory should be removed");
+}
+
+#[test]
+fn stale_install_transaction_directories_do_not_count_as_installed_versions() {
+    let store = temporary_dir("only-stale-transactions");
+    write_stale_transaction_package(&store, "demo", "1.0.0.incoming-123-1", "1.0.0");
+    write_stale_transaction_package(&store, "demo", "1.0.0.replaced-123-2", "1.0.0");
+
+    let installed = list_installed(&store).expect("list installed packages");
+
+    assert!(installed.is_empty());
+    let error = find_installed(&store, "demo")
+        .expect_err("stale transaction directories must not satisfy package lookup");
+    assert!(error.contains("is not installed"), "{error}");
+    let error = find_verified_installed(&store, "demo@1.0.0")
+        .expect_err("stale transaction directories must not satisfy verified lookup");
+    assert!(error.contains("is not installed"), "{error}");
+    let error = resolve_package_or_path("demo@1.0.0", Some(&store))
+        .expect_err("inspect resolution must not accept stale transaction directories");
+    assert!(error.contains("is not installed"), "{error}");
+
+    fs::remove_dir_all(store).expect("temporary directory should be removed");
 }
 
 #[cfg(unix)]

@@ -86,6 +86,9 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
                 continue;
             }
             let version = utf8_directory_name(&version_path, "version")?;
+            if is_install_transaction_directory(&version) {
+                continue;
+            }
             packages.push(InstalledPackage {
                 name: name.clone(),
                 version,
@@ -97,6 +100,28 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
     }
     packages.sort_by(|a, b| a.name.cmp(&b.name).then(a.version.cmp(&b.version)));
     Ok(packages)
+}
+
+fn is_install_transaction_directory(version: &str) -> bool {
+    [".incoming-", ".replaced-"]
+        .iter()
+        .any(|marker| has_transaction_suffix(version, marker))
+}
+
+fn has_transaction_suffix(version: &str, marker: &str) -> bool {
+    let Some((base, suffix)) = version.rsplit_once(marker) else {
+        return false;
+    };
+    if base.is_empty() {
+        return false;
+    }
+    let Some((pid, sequence)) = suffix.split_once('-') else {
+        return false;
+    };
+    !pid.is_empty()
+        && !sequence.is_empty()
+        && pid.bytes().all(|byte| byte.is_ascii_digit())
+        && sequence.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn utf8_directory_name(path: &Path, kind: &str) -> Result<String, String> {
