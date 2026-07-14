@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Component;
+#[cfg(test)]
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::manifest::{read_manifest, BindingPolicy, CistaManifest, SourceKind, TargetMode};
 use fs2::FileExt;
@@ -10,6 +12,52 @@ pub(super) const STORE_MUTATION_LOCK_FILE: &str = ".cista-install.lock";
 
 pub(super) struct StoreMutationLocks {
     _files: Vec<fs::File>,
+}
+
+#[cfg(test)]
+type StoreLockAttemptObserver = Arc<dyn Fn(&Path, &fs::File) + Send + Sync + 'static>;
+
+#[cfg(test)]
+static STORE_LOCK_ATTEMPT_OBSERVER: OnceLock<Mutex<Option<StoreLockAttemptObserver>>> =
+    OnceLock::new();
+
+#[cfg(test)]
+fn store_lock_attempt_observer() -> MutexGuard<'static, Option<StoreLockAttemptObserver>> {
+    let observer = STORE_LOCK_ATTEMPT_OBSERVER.get_or_init(|| Mutex::new(None));
+    match observer.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+#[cfg(test)]
+pub(super) struct StoreLockAttemptObserverGuard {
+    previous: Option<StoreLockAttemptObserver>,
+}
+
+#[cfg(test)]
+impl Drop for StoreLockAttemptObserverGuard {
+    fn drop(&mut self) {
+        let mut observer = store_lock_attempt_observer();
+        *observer = self.previous.take();
+    }
+}
+
+#[cfg(test)]
+pub(super) fn observe_store_lock_attempt(
+    observer: StoreLockAttemptObserver,
+) -> StoreLockAttemptObserverGuard {
+    let mut slot = store_lock_attempt_observer();
+    let previous = slot.replace(observer);
+    StoreLockAttemptObserverGuard { previous }
+}
+
+#[cfg(test)]
+fn notify_store_lock_attempt(path: &Path, file: &fs::File) {
+    let observer = store_lock_attempt_observer().clone();
+    if let Some(observer) = observer {
+        observer(path, file);
+    }
 }
 
 pub(super) fn acquire_store_mutation_locks(
@@ -45,6 +93,8 @@ pub(super) fn acquire_store_mutation_locks(
                     path.display()
                 )
             })?;
+        #[cfg(test)]
+        notify_store_lock_attempt(&path, &file);
         file.lock_exclusive().map_err(|error| {
             format!(
                 "failed to acquire store mutation lock {}: {error}",

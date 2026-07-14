@@ -1,11 +1,12 @@
 use std::fs;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{remove_empty_name_dir, run};
 use crate::cli::PackageArg;
 use crate::commands::shared;
+use fs2::FileExt;
 
 fn fixture(name: &str) -> std::path::PathBuf {
     let nanos = SystemTime::now()
@@ -48,11 +49,29 @@ fn remove_waits_for_store_mutation_lock() {
     fs::write(package.join("payload"), "installed").expect("write package payload");
     let lock = shared::acquire_store_mutation_locks(&store, None).expect("hold store lock");
 
-    let (ready_tx, ready_rx) = mpsc::channel();
+    let expected_lock_path = store.join(shared::STORE_MUTATION_LOCK_FILE);
+    let (attempt_tx, attempt_rx) = mpsc::channel();
+    let _attempt_observer =
+        shared::observe_store_lock_attempt(Arc::new(move |lock_path, lock_file| {
+            if lock_path != expected_lock_path {
+                return;
+            }
+            match lock_file.try_lock_exclusive() {
+                Ok(()) => {
+                    lock_file
+                        .unlock()
+                        .expect("release unexpected store lock acquisition");
+                    panic!("remove reached an unlocked store mutation lock");
+                }
+                Err(_) => attempt_tx
+                    .send(())
+                    .expect("signal remove store lock attempt"),
+            }
+        }));
+
     let (done_tx, done_rx) = mpsc::channel();
     let remove_store = store.clone();
     let handle = std::thread::spawn(move || {
-        ready_tx.send(()).expect("signal remove thread ready");
         let result = run(PackageArg {
             package: "tool@1.2.3".to_owned(),
             store: Some(remove_store),
@@ -62,10 +81,9 @@ fn remove_waits_for_store_mutation_lock() {
         done_tx.send(result).expect("send remove result");
     });
 
-    ready_rx
+    attempt_rx
         .recv_timeout(Duration::from_secs(1))
-        .expect("remove thread should start");
-    std::thread::sleep(Duration::from_millis(50));
+        .expect("remove thread should reach the held store mutation lock");
     assert!(
         package.is_dir(),
         "remove must not mutate the package while the store lock is held"
