@@ -33,7 +33,8 @@ fn list(store: Option<&std::path::Path>) -> CommandResult {
 
 fn show(package_id: &str, store: Option<&std::path::Path>) -> CommandResult {
     let store_root = store::store_root(store).map_err(|err| vec![err])?;
-    let package = store::find_installed(&store_root, package_id).map_err(|err| vec![err])?;
+    let package =
+        store::find_verified_installed(&store_root, package_id).map_err(|err| vec![err])?;
     println!("package: {}", package.name);
     println!("version: {}", package.version);
     println!("root: {}", package.package_root.display());
@@ -62,7 +63,8 @@ fn show(package_id: &str, store: Option<&std::path::Path>) -> CommandResult {
 
 fn files(package_id: &str, store: Option<&std::path::Path>) -> CommandResult {
     let store_root = store::store_root(store).map_err(|err| vec![err])?;
-    let package = store::find_installed(&store_root, package_id).map_err(|err| vec![err])?;
+    let package =
+        store::find_verified_installed(&store_root, package_id).map_err(|err| vec![err])?;
     let files = store::list_package_files(&package.package_root).map_err(|err| vec![err])?;
     for file in files {
         println!("{}", file.display());
@@ -72,7 +74,8 @@ fn files(package_id: &str, store: Option<&std::path::Path>) -> CommandResult {
 
 fn interfaces(package_id: &str, store: Option<&std::path::Path>) -> CommandResult {
     let store_root = store::store_root(store).map_err(|err| vec![err])?;
-    let package = store::find_installed(&store_root, package_id).map_err(|err| vec![err])?;
+    let package =
+        store::find_verified_installed(&store_root, package_id).map_err(|err| vec![err])?;
     let files = store::list_package_files(&package.package_root).map_err(|err| vec![err])?;
     let interfaces = interface_files(files);
     if interfaces.is_empty() {
@@ -99,7 +102,8 @@ fn is_interface_file(path: &Path) -> bool {
 
 fn runtimes(package_id: &str, store: Option<&std::path::Path>) -> CommandResult {
     let store_root = store::store_root(store).map_err(|err| vec![err])?;
-    let package = store::find_installed(&store_root, package_id).map_err(|err| vec![err])?;
+    let package =
+        store::find_verified_installed(&store_root, package_id).map_err(|err| vec![err])?;
     if let Some((_, manifest)) =
         store::read_any_target_manifest(&package).map_err(|err| vec![err])?
     {

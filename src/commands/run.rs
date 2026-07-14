@@ -8,7 +8,8 @@ use super::{rust_target, CommandResult, Path, PathBuf};
 
 pub fn run(args: RunArgs) -> CommandResult {
     let store_root = store::store_root(args.store.as_deref()).map_err(|err| vec![err])?;
-    let package = store::find_installed(&store_root, &args.package).map_err(|err| vec![err])?;
+    let package =
+        store::find_verified_installed(&store_root, &args.package).map_err(|err| vec![err])?;
     let host = rust_target::rust_host_triple().map_err(|err| vec![err])?;
     let target_root = package.targets_dir.join("rust").join(&host);
     let manifest_path = target_root.join(manifest::MANIFEST_FILE);
@@ -18,6 +19,8 @@ pub fn run(args: RunArgs) -> CommandResult {
             package.name, package.version
         )]
     })?;
+    store::validate_manifest_identity(&package, &manifest_path, &installed)
+        .map_err(|err| vec![err])?;
     let executable = executable_path(&installed, &target_root, &host).map_err(|err| vec![err])?;
     let status = Command::new(&executable)
         .args(&args.args)

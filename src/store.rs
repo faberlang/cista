@@ -149,6 +149,16 @@ pub fn find_installed(store_root: &Path, package_id: &str) -> Result<InstalledPa
     ))
 }
 
+/// Resolve `name` or `name@version` and validate installed target manifest identity.
+pub fn find_verified_installed(
+    store_root: &Path,
+    package_id: &str,
+) -> Result<InstalledPackage, String> {
+    let package = find_installed(store_root, package_id)?;
+    validate_installed_identity(&package)?;
+    Ok(package)
+}
+
 /// Parse `name` or `name@version`.
 pub fn split_package_id(package_id: &str) -> (String, Option<String>) {
     if let Some((name, version)) = package_id.split_once('@') {
@@ -230,10 +240,13 @@ pub fn read_any_target_manifest(
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(err) => return Err(format!("failed to inspect {}: {err}", targets.display())),
     }
-    walk_for_manifest(targets)
+    walk_for_manifest(package, targets)
 }
 
-fn walk_for_manifest(dir: &Path) -> Result<Option<(PathBuf, CistaManifest)>, String> {
+fn walk_for_manifest(
+    package: &InstalledPackage,
+    dir: &Path,
+) -> Result<Option<(PathBuf, CistaManifest)>, String> {
     let mut entries = fs::read_dir(dir)
         .map_err(|err| format!("failed to read {}: {err}", dir.display()))?
         .collect::<Result<Vec<_>, _>>()
@@ -252,13 +265,15 @@ fn walk_for_manifest(dir: &Path) -> Result<Option<(PathBuf, CistaManifest)>, Str
             ));
         }
         if file_type.is_dir() {
-            if let Some(found) = walk_for_manifest(&path)? {
+            if let Some(found) = walk_for_manifest(package, &path)? {
                 return Ok(Some(found));
             }
         } else if file_type.is_file()
             && path.file_name().and_then(|n| n.to_str()) == Some(MANIFEST_FILE)
         {
-            return read_manifest(&path).map(|manifest| Some((path, manifest)));
+            let manifest = read_manifest(&path)?;
+            validate_manifest_identity(package, &path, &manifest)?;
+            return Ok(Some((path, manifest)));
         } else if !file_type.is_file() {
             return Err(format!(
                 "installed package contains unsupported entry {}",
@@ -267,6 +282,75 @@ fn walk_for_manifest(dir: &Path) -> Result<Option<(PathBuf, CistaManifest)>, Str
         }
     }
     Ok(None)
+}
+
+/// Validate all installed target manifests discovered for a package.
+pub fn validate_installed_identity(package: &InstalledPackage) -> Result<(), String> {
+    validate_target_manifest_tree(package, &package.targets_dir)
+}
+
+fn validate_target_manifest_tree(package: &InstalledPackage, dir: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(format!(
+                "installed package contains unsupported symlink {}",
+                dir.display()
+            ));
+        }
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(format!("failed to inspect {}: {err}", dir.display())),
+    }
+
+    let entries =
+        fs::read_dir(dir).map_err(|err| format!("failed to read {}: {err}", dir.display()))?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|err| format!("failed to read entry under {}: {err}", dir.display()))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
+        if file_type.is_symlink() {
+            return Err(format!(
+                "installed package contains unsupported symlink {}",
+                path.display()
+            ));
+        }
+        if file_type.is_dir() {
+            validate_target_manifest_tree(package, &path)?;
+        } else if file_type.is_file()
+            && path.file_name().and_then(|name| name.to_str()) == Some(MANIFEST_FILE)
+        {
+            let manifest = read_manifest(&path)?;
+            validate_manifest_identity(package, &path, &manifest)?;
+        } else if !file_type.is_file() {
+            return Err(format!(
+                "installed package contains unsupported entry {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_manifest_identity(
+    package: &InstalledPackage,
+    manifest_path: &Path,
+    manifest: &CistaManifest,
+) -> Result<(), String> {
+    if manifest.source.package == package.name && manifest.source.version == package.version {
+        return Ok(());
+    }
+    Err(format!(
+        "installed package identity mismatch: directory `{}@{}` contains target manifest {} for `{}@{}`",
+        package.name,
+        package.version,
+        manifest_path.display(),
+        manifest.source.package,
+        manifest.source.version
+    ))
 }
 
 /// Resolve a package id or filesystem path for inspect.
@@ -280,7 +364,7 @@ pub fn resolve_package_or_path(
         return Ok(ResolvedInspectTarget::Path(root));
     }
     let store_root = store_root(store)?;
-    let installed = find_installed(&store_root, value)?;
+    let installed = find_verified_installed(&store_root, value)?;
     Ok(ResolvedInspectTarget::Installed(installed))
 }
 

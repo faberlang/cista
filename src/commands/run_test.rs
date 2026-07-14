@@ -10,6 +10,32 @@ fn temp_root() -> PathBuf {
     std::env::temp_dir().join(format!("cista-run-{}-{nanos}", std::process::id()))
 }
 
+fn write_installed_binary_manifest(target: &Path, package: &str, version: &str, host: &str) {
+    fs::create_dir_all(target).expect("target directory should be created");
+    fs::write(
+        target.join(manifest::MANIFEST_FILE),
+        format!(
+            r#"[source]
+package = "{package}"
+version = "{version}"
+faber_min = "0.38.0"
+kind = "artifact"
+role = "bin"
+interfaces = "../../../interfaces"
+
+[target]
+language = "rust"
+mode = "artifact"
+binding_policy = "generated"
+artifact = "tool"
+crate = "{package}"
+triple = "{host}"
+"#
+        ),
+    )
+    .expect("installed manifest should be written");
+}
+
 #[test]
 fn run_installed_binary_with_passthrough_argument() {
     let root = temp_root();
@@ -79,6 +105,31 @@ edition = "2021"
     })
     .expect("run installed binary");
 
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn run_rejects_installed_manifest_identity_mismatch() {
+    let root = temp_root();
+    let store = root.join("store");
+    let host = rust_target::rust_host_triple().expect("host triple");
+    let target = store.join("tool/1.2.3/targets/rust").join(&host);
+    write_installed_binary_manifest(&target, "other", "9.9.9", &host);
+
+    let error = run(RunArgs {
+        package: "tool@1.2.3".to_owned(),
+        store: Some(store),
+        args: Vec::new(),
+    })
+    .expect_err("run should reject mismatched installed identity");
+
+    assert_eq!(error.len(), 1);
+    assert!(
+        error[0].contains("installed package identity mismatch"),
+        "{error:?}"
+    );
+    assert!(error[0].contains("directory `tool@1.2.3`"), "{error:?}");
+    assert!(error[0].contains("for `other@9.9.9`"), "{error:?}");
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
 
