@@ -4,7 +4,9 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::manifest::{read_manifest, CistaManifest, MANIFEST_FILE};
+use crate::manifest::{
+    read_manifest, read_meta_manifest, CistaManifest, MetaManifest, MANIFEST_FILE,
+};
 
 #[derive(Clone, Debug)]
 pub struct InstalledPackage {
@@ -67,6 +69,9 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
         if is_reserved_store_namespace(&name) {
             continue;
         }
+        if !is_valid_store_segment(&name, false) {
+            continue;
+        }
         let version_entries = fs::read_dir(&package_path).map_err(|err| {
             format!(
                 "failed to read package directory {}: {err}",
@@ -92,6 +97,9 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
             if is_install_transaction_directory(&version) {
                 continue;
             }
+            if !is_valid_store_segment(&version, true) {
+                continue;
+            }
             packages.push(InstalledPackage {
                 name: name.clone(),
                 version,
@@ -107,6 +115,56 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
 
 fn is_reserved_store_namespace(name: &str) -> bool {
     name.starts_with('.')
+}
+
+pub(crate) fn validate_store_identity(package: &str, version: &str) -> Result<(), Vec<String>> {
+    let mut diagnostics = Vec::new();
+    require_non_empty("source.package", package, &mut diagnostics);
+    require_non_empty("source.version", version, &mut diagnostics);
+    validate_store_segment("source.package", package, false, &mut diagnostics);
+    validate_store_segment("source.version", version, true, &mut diagnostics);
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(diagnostics)
+    }
+}
+
+fn require_non_empty(field: &str, value: &str, diagnostics: &mut Vec<String>) {
+    if value.trim().is_empty() {
+        diagnostics.push(format!("{field} must not be empty"));
+    }
+}
+
+fn validate_store_segment(
+    field: &str,
+    value: &str,
+    is_version: bool,
+    diagnostics: &mut Vec<String>,
+) {
+    if value.is_empty() {
+        return;
+    }
+    if !is_valid_store_segment(value, is_version) {
+        diagnostics.push(format!(
+            "{field} `{value}` is not a valid package store path segment"
+        ));
+    }
+    if is_version && is_install_transaction_directory(value) {
+        diagnostics.push(format!(
+            "{field} `{value}` collides with Cista install transaction directory namespace"
+        ));
+    }
+}
+
+fn is_valid_store_segment(value: &str, is_version: bool) -> bool {
+    !value.contains('/')
+        && !value.contains('\\')
+        && !value.contains('@')
+        && value != "."
+        && value != ".."
+        && !value.starts_with('.')
+        && (!is_version || !is_install_transaction_directory(value))
 }
 
 pub(crate) fn is_install_transaction_directory(version: &str) -> bool {
@@ -318,7 +376,42 @@ fn walk_for_manifest(
 
 /// Validate all installed target manifests discovered for a package.
 pub fn validate_installed_identity(package: &InstalledPackage) -> Result<(), String> {
+    validate_root_manifest(package)?;
     validate_target_manifest_tree(package, &package.targets_dir)
+}
+
+fn validate_root_manifest(package: &InstalledPackage) -> Result<(), String> {
+    let path = package.package_root.join(MANIFEST_FILE);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(format!(
+                "installed package contains unsupported symlink {}",
+                path.display()
+            ));
+        }
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(metadata) if metadata.is_dir() => {
+            return Err(format!(
+                "installed package contains unsupported entry {}",
+                path.display()
+            ));
+        }
+        Ok(_) => {
+            return Err(format!(
+                "installed package contains unsupported entry {}",
+                path.display()
+            ));
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(format!("failed to inspect {}: {err}", path.display())),
+    }
+
+    if let Some(meta) = read_meta_manifest(&path)? {
+        validate_meta_manifest_identity(package, &path, &meta)?;
+        return Ok(());
+    }
+    let manifest = read_manifest(&path)?;
+    validate_manifest_identity(package, &path, &manifest)
 }
 
 fn validate_target_manifest_tree(package: &InstalledPackage, dir: &Path) -> Result<(), String> {
@@ -377,6 +470,24 @@ pub fn validate_manifest_identity(
     }
     Err(format!(
         "installed package identity mismatch: directory `{}@{}` contains target manifest {} for `{}@{}`",
+        package.name,
+        package.version,
+        manifest_path.display(),
+        manifest.source.package,
+        manifest.source.version
+    ))
+}
+
+fn validate_meta_manifest_identity(
+    package: &InstalledPackage,
+    manifest_path: &Path,
+    manifest: &MetaManifest,
+) -> Result<(), String> {
+    if manifest.source.package == package.name && manifest.source.version == package.version {
+        return Ok(());
+    }
+    Err(format!(
+        "installed package identity mismatch: directory `{}@{}` contains root manifest {} for `{}@{}`",
         package.name,
         package.version,
         manifest_path.display(),
