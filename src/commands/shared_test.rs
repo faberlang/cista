@@ -208,6 +208,41 @@ fn source_version_must_not_collide_with_transaction_directory_suffixes() {
 }
 
 #[test]
+fn source_identity_segments_must_not_contain_at_signs() {
+    for (field, package, version) in [
+        ("source.package", "foo@bar", "1.0.0"),
+        ("source.version", "foo", "1.0@0"),
+    ] {
+        let invalid_value = if field == "source.package" {
+            package
+        } else {
+            version
+        };
+        let expected =
+            format!("{field} `{invalid_value}` is not a valid package store path segment");
+        let mut manifest = buildable_manifest();
+        manifest.source.package = package.to_owned();
+        manifest.source.version = version.to_owned();
+        let mut diagnostics = Vec::new();
+
+        validate_manifest_shape(&manifest, &mut diagnostics);
+
+        assert!(
+            diagnostics.iter().any(|diagnostic| diagnostic == &expected),
+            "missing @ diagnostic for {field}: {diagnostics:?}"
+        );
+        let identity_error = validate_identity(package, version)
+            .expect_err("identity validation must reject @ in package identity segments");
+        assert!(
+            identity_error
+                .iter()
+                .any(|diagnostic| diagnostic == &expected),
+            "missing @ identity diagnostic for {field}: {identity_error:?}"
+        );
+    }
+}
+
+#[test]
 fn package_manifest_paths_must_be_relative_and_contained() {
     let root = temp_root("manifest-path-boundary");
     let package = root.join("package");

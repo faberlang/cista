@@ -581,6 +581,7 @@ fn validate_store_segment(field: &str, value: &str, diagnostics: &mut Vec<String
     }
     if value.contains('/')
         || value.contains('\\')
+        || value.contains('@')
         || value == "."
         || value == ".."
         || value.starts_with('.')

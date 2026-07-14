@@ -81,6 +81,31 @@ fn write_stale_transaction_package(
 }
 
 #[test]
+fn reserved_cache_namespace_is_hidden_from_store_discovery() {
+    let store = temporary_dir("cache-namespace");
+    write_installed_package(&store, "demo", "1.0.0");
+    let cached = store.join(".cache/registry/tool/1.2.3");
+    fs::create_dir_all(&cached).expect("cache entry should be created");
+    fs::write(cached.join("archive"), "cached package").expect("cache payload should be written");
+
+    let installed = list_installed(&store).expect("list installed packages");
+
+    assert_eq!(installed.len(), 1);
+    assert_eq!(installed[0].name, "demo");
+    let error = find_installed(&store, ".cache@registry")
+        .expect_err("cache namespace must not satisfy package lookup");
+    assert!(error.contains("is not installed"), "{error}");
+    let error = find_verified_installed(&store, ".cache@registry")
+        .expect_err("cache namespace must not satisfy verified lookup");
+    assert!(error.contains("is not installed"), "{error}");
+    let error = resolve_package_or_path(".cache@registry", Some(&store))
+        .expect_err("inspect resolution must not accept cache namespace");
+    assert!(error.contains("is not installed"), "{error}");
+
+    fs::remove_dir_all(store).expect("temporary directory should be removed");
+}
+
+#[test]
 fn stale_install_transaction_directories_are_hidden_from_store_discovery() {
     let store = temporary_dir("stale-transactions");
     write_installed_package(&store, "demo", "1.0.0");

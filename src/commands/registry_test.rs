@@ -71,6 +71,18 @@ fn remote_archive_rejects_link_entries() {
 }
 
 #[test]
+fn registry_exact_identity_rejects_at_sign_inside_segments() {
+    for package_id in ["foo@bar@1.0.0", "foo@1.0@0"] {
+        let error = exact_identity(package_id)
+            .expect_err("ambiguous @ inside identity segment must fail closed");
+        assert!(
+            error.contains("is not a valid package store path segment"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn invalid_remote_archive_preserves_cached_package() {
     let root = temp_root().join("invalid-remote-archive");
     let source = root.join("source");

@@ -64,6 +64,9 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
             continue;
         }
         let name = utf8_directory_name(&package_path, "package")?;
+        if is_reserved_store_namespace(&name) {
+            continue;
+        }
         let version_entries = fs::read_dir(&package_path).map_err(|err| {
             format!(
                 "failed to read package directory {}: {err}",
@@ -100,6 +103,10 @@ pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String
     }
     packages.sort_by(|a, b| a.name.cmp(&b.name).then(a.version.cmp(&b.version)));
     Ok(packages)
+}
+
+fn is_reserved_store_namespace(name: &str) -> bool {
+    name.starts_with('.')
 }
 
 pub(crate) fn is_install_transaction_directory(version: &str) -> bool {

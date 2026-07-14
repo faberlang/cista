@@ -41,6 +41,32 @@ fn package_name_directory_with_another_version_is_preserved() {
 }
 
 #[test]
+fn remove_does_not_delete_reserved_cache_namespace() {
+    let root = fixture("cache-namespace");
+    let store = root.join("store");
+    let cached = store.join(".cache/registry/tool/1.2.3");
+    fs::create_dir_all(&cached).expect("create registry cache entry");
+    fs::write(cached.join("archive"), "cached package").expect("write registry cache payload");
+
+    let error = run(PackageArg {
+        package: ".cache@registry".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        registry_url: None,
+    })
+    .expect_err("reserved cache namespace must not resolve as removable package");
+
+    assert!(error
+        .iter()
+        .any(|message| message.contains("is not installed")));
+    assert!(
+        cached.join("archive").is_file(),
+        "failed removal must preserve registry cache payload"
+    );
+    fs::remove_dir_all(root).expect("remove fixture");
+}
+
+#[test]
 fn remove_waits_for_store_mutation_lock() {
     let root = fixture("locked-remove");
     let store = root.join("store");
