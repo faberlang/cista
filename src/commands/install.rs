@@ -12,34 +12,61 @@ use super::{env, fs, fs_util, registry, rust_target, shared, CommandResult, Path
 /// matching `faber.toml` `[dependencies]` entry.
 const PLATFORM_DEFAULT_PACKAGES: &[&str] = &["norma"];
 pub fn run(args: InstallArgs) -> CommandResult {
+    if args.path.is_some() && args.package.is_some() {
+        return Err(vec![
+            "install accepts either --path or name@version, not both".to_owned(),
+        ]);
+    }
+    if args.path.is_none() && args.package.is_none() {
+        return Err(vec!["install requires --path or name@version".to_owned()]);
+    }
+
+    let store_root = shared::resolve_store_root(args.store.as_deref()).map_err(|err| vec![err])?;
+    let project_root = resolve_project_root(args.project.as_deref())?;
+
     let package_path = match (&args.path, &args.package) {
         (Some(path), None) => path.clone(),
         (None, Some(package)) => {
             registry::reject_meta_install_by_name(package, args.registry.as_deref())
                 .map_err(|err| vec![err])?;
-            registry::fetch_to_cache(package, args.registry.as_deref(), args.store.as_deref())
-                .map_err(|err| vec![err])?
+            let install_locks =
+                shared::acquire_store_mutation_locks(&store_root, project_root.as_deref())
+                    .map_err(|error| vec![error])?;
+            let package_path =
+                registry::fetch_to_cache_locked(package, args.registry.as_deref(), &store_root)
+                    .map_err(|err| vec![err])?;
+            return install_package_path(
+                &args,
+                package_path,
+                &store_root,
+                project_root,
+                install_locks,
+            );
         }
-        (Some(_), Some(_)) => {
-            return Err(vec![
-                "install accepts either --path or name@version, not both".to_owned(),
-            ])
-        }
-        (None, None) => return Err(vec!["install requires --path or name@version".to_owned()]),
+        _ => return Err(vec!["install requires --path or name@version".to_owned()]),
     };
+
+    install_package_from_path(&args, package_path, &store_root, project_root)
+}
+
+fn install_package_from_path(
+    args: &InstallArgs,
+    package_path: PathBuf,
+    store_root: &Path,
+    project_root: Option<PathBuf>,
+) -> CommandResult {
     let package_root = shared::normalize_path(&package_path);
     let manifest_path = shared::package_manifest_path(&package_root, &args.manifest)
         .map_err(|error| vec![error])?;
-    let store_root = shared::resolve_store_root(args.store.as_deref()).map_err(|err| vec![err])?;
     if let Some(meta) = manifest::read_meta_manifest(&manifest_path).map_err(|err| vec![err])? {
         let meta_root = store_root
             .join(&meta.source.package)
             .join(&meta.source.version);
-        verify_install_store_disjoint(&package_root, &store_root, &meta_root)
+        verify_install_store_disjoint(&package_root, store_root, &meta_root)
             .map_err(|err| vec![err])?;
         let install_locks =
-            shared::acquire_store_mutation_locks(&store_root, None).map_err(|error| vec![error])?;
-        let result = install_meta_package(&args, &package_root, &meta, &store_root);
+            shared::acquire_store_mutation_locks(store_root, None).map_err(|error| vec![error])?;
+        let result = install_meta_package(args, &package_root, &meta, store_root);
         drop(install_locks);
         return result;
     }
@@ -49,13 +76,40 @@ pub fn run(args: InstallArgs) -> CommandResult {
         Some(&args.target_language),
         args.verify_target_build,
     )?;
-    let project_root = resolve_project_root(args.project.as_deref())?;
-    let package_store_root = shared::package_store_root(&store_root, &checked.manifest);
-    verify_install_store_disjoint(&checked.package_root, &store_root, &package_store_root)
+    let package_store_root = shared::package_store_root(store_root, &checked.manifest);
+    verify_install_store_disjoint(&checked.package_root, store_root, &package_store_root)
         .map_err(|err| vec![err])?;
-    let install_locks = shared::acquire_store_mutation_locks(&store_root, project_root.as_deref())
+    let install_locks = shared::acquire_store_mutation_locks(store_root, project_root.as_deref())
         .map_err(|error| vec![error])?;
-    let mut installed = install_checked_package_transaction(&checked, &store_root)?;
+    install_checked_package_with_locks(checked, store_root, project_root, install_locks)
+}
+
+fn install_package_path(
+    args: &InstallArgs,
+    package_path: PathBuf,
+    store_root: &Path,
+    project_root: Option<PathBuf>,
+    install_locks: shared::StoreMutationLocks,
+) -> CommandResult {
+    let checked = shared::validate_package(
+        &package_path,
+        &args.manifest,
+        Some(&args.target_language),
+        args.verify_target_build,
+    )?;
+    let package_store_root = shared::package_store_root(store_root, &checked.manifest);
+    verify_install_store_disjoint(&checked.package_root, store_root, &package_store_root)
+        .map_err(|err| vec![err])?;
+    install_checked_package_with_locks(checked, store_root, project_root, install_locks)
+}
+
+fn install_checked_package_with_locks(
+    checked: shared::CheckedPackage,
+    store_root: &Path,
+    project_root: Option<PathBuf>,
+    install_locks: shared::StoreMutationLocks,
+) -> CommandResult {
+    let mut installed = install_checked_package_transaction(&checked, store_root)?;
 
     if let Some(project_root) = project_root {
         if let Err(error) = rewrite_project_lock(&project_root, &checked, &installed.paths) {

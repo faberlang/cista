@@ -4,6 +4,9 @@ use crate::faber_lock::{inject_write_and_replace_fault, read_lock, WriteAndRepla
 use fs2::FileExt;
 use std::fs::OpenOptions;
 use std::process::Command;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 fn temp_root(name: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now()
@@ -359,6 +362,59 @@ version = "1.0.0"
         "rejected install-by-name must not install pathless dependencies"
     );
 
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn install_by_name_waits_for_store_mutation_lock_before_cache_mutation() {
+    let root = temp_root("install-name-cache-lock");
+    let registry = root.join("registry");
+    let registry_package = registry.join("example/0.1.0");
+    let store = root.join("store");
+    write_interfaces_only_package(&registry_package, "example");
+
+    let lock = shared::acquire_store_mutation_locks(&store, None).expect("hold store lock");
+    let cache = store.join(".cache/registry/example/0.1.0");
+    let installed = store.join("example/0.1.0");
+    let (done_tx, done_rx) = mpsc::channel();
+    let install_store = store.clone();
+    let handle = thread::spawn(move || {
+        let result = run(InstallArgs {
+            path: None,
+            package: Some("example@0.1.0".to_owned()),
+            manifest: PathBuf::from("cista.toml"),
+            target_language: "rust".to_owned(),
+            store: Some(install_store),
+            registry: Some(registry),
+            project: None,
+            verify_target_build: false,
+        });
+        done_tx.send(result).expect("send install result");
+    });
+
+    thread::sleep(Duration::from_millis(200));
+    assert!(
+        !cache.exists(),
+        "install-by-name must not mutate registry cache while store mutation lock is held"
+    );
+    assert!(
+        !installed.exists(),
+        "install-by-name must not write package store while store mutation lock is held"
+    );
+    assert!(
+        done_rx.try_recv().is_err(),
+        "install-by-name should wait for the held store mutation lock"
+    );
+
+    drop(lock);
+    done_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("install should finish after lock release")
+        .expect("install should succeed");
+    handle.join().expect("install thread should not panic");
+
+    assert!(cache.join("cista.toml").is_file());
+    assert!(installed.join("interfaces/example.fab").is_file());
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
 

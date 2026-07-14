@@ -32,12 +32,15 @@ pub(super) fn fetch_remote_to_cache(
 ) -> Result<PathBuf, String> {
     let (name, version) = exact_identity(package_id)?;
     let archive = authenticated_client(origin)?.fetch_package(&name, &version)?;
-    let destination = store::store_root(explicit_store)?
+    let store_root = store::store_root(explicit_store)?;
+    let mutation_locks = shared::acquire_store_mutation_locks(&store_root, None)?;
+    let destination = store_root
         .join(".cache")
         .join("registry")
         .join(&name)
         .join(&version);
     install_remote_archive(&archive, &destination, &name, &version)?;
+    drop(mutation_locks);
     Ok(destination)
 }
 
@@ -159,6 +162,18 @@ pub(super) fn fetch_to_cache(
     explicit_registry: Option<&Path>,
     explicit_store: Option<&Path>,
 ) -> Result<PathBuf, String> {
+    let store_root = store::store_root(explicit_store)?;
+    let mutation_locks = shared::acquire_store_mutation_locks(&store_root, None)?;
+    let destination = fetch_to_cache_locked(package_id, explicit_registry, &store_root)?;
+    drop(mutation_locks);
+    Ok(destination)
+}
+
+pub(super) fn fetch_to_cache_locked(
+    package_id: &str,
+    explicit_registry: Option<&Path>,
+    store_root: &Path,
+) -> Result<PathBuf, String> {
     let (name, version) = exact_identity(package_id)?;
     let registry = registry_root(explicit_registry)?;
     let source = registry.join(&name).join(&version);
@@ -191,7 +206,6 @@ pub(super) fn fetch_to_cache(
             validate_cached_package(&source)?;
         }
     }
-    let store_root = store::store_root(explicit_store)?;
     let destination = store_root
         .join(".cache")
         .join("registry")

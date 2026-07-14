@@ -3,6 +3,9 @@ use crate::cli::{CistaCli, CistaCommand};
 use clap::Parser;
 use std::fs;
 use std::io::Cursor;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 fn temp_root() -> PathBuf {
     let nanos = std::time::SystemTime::now()
@@ -10,6 +13,72 @@ fn temp_root() -> PathBuf {
         .expect("clock after epoch")
         .as_nanos();
     std::env::temp_dir().join(format!("cista-registry-{}-{nanos}", std::process::id()))
+}
+
+fn write_interfaces_only_registry_package(package: &Path, name: &str, version: &str) {
+    fs::create_dir_all(package.join("interfaces")).expect("create package interfaces");
+    fs::write(
+        package.join("cista.toml"),
+        format!(
+            r#"[source]
+package = "{name}"
+version = "{version}"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#
+        ),
+    )
+    .expect("write package manifest");
+    fs::write(
+        package.join("interfaces").join(format!("{name}.fab")),
+        "functio lege() → nihil { redde nihil }\n",
+    )
+    .expect("write package interface");
+}
+
+#[test]
+fn fetch_to_cache_waits_for_store_mutation_lock() {
+    let root = temp_root().join("fetch-cache-lock");
+    let registry = root.join("registry");
+    let registry_package = registry.join("tool/1.2.3");
+    let store = root.join("store");
+    write_interfaces_only_registry_package(&registry_package, "tool", "1.2.3");
+
+    let lock = shared::acquire_store_mutation_locks(&store, None).expect("hold store lock");
+    let cache = store.join(".cache/registry/tool/1.2.3");
+    let (done_tx, done_rx) = mpsc::channel();
+    let fetch_store = store.clone();
+    let handle = thread::spawn(move || {
+        let result = fetch_to_cache("tool@1.2.3", Some(&registry), Some(&fetch_store));
+        done_tx.send(result).expect("send fetch result");
+    });
+
+    thread::sleep(Duration::from_millis(200));
+    assert!(
+        !cache.exists(),
+        "fetch must not mutate cache while store mutation lock is held"
+    );
+    assert!(
+        done_rx.try_recv().is_err(),
+        "fetch should wait for the held store mutation lock"
+    );
+
+    drop(lock);
+    let fetched = done_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("fetch should finish after lock release")
+        .expect("fetch should succeed");
+    handle.join().expect("fetch thread should not panic");
+
+    assert_eq!(fetched, cache);
+    assert!(cache.join("cista.toml").is_file());
+    fs::remove_dir_all(root).expect("cleanup temp root");
 }
 
 #[test]
