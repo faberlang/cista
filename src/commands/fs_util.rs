@@ -10,6 +10,7 @@ static REPLACEMENT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 #[cfg(test)]
 thread_local! {
     static INJECT_COMMIT_FAILURE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    static INJECT_FINALIZE_SYNC_FAILURE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
 
 pub(super) fn copy_dir_clean(source: &Path, destination: &Path) -> Result<(), String> {
@@ -56,25 +57,47 @@ pub(super) fn commit_staged_directory_transaction(
 pub(super) struct DirectoryReplacement {
     destination: PathBuf,
     backup: Option<PathBuf>,
+    committed: bool,
 }
 
 impl DirectoryReplacement {
     pub(super) fn finalize(&mut self) -> Result<(), String> {
+        if self.committed {
+            return Ok(());
+        }
         let Some(backup) = self.backup.as_ref() else {
+            self.committed = true;
             return Ok(());
         };
         remove_directory_if_present(backup)?;
         self.backup = None;
+        self.committed = true;
+        #[cfg(test)]
+        if should_inject_finalize_sync_failure(&self.destination) {
+            return Err(format!(
+                "injected failure after committing replacement directory {}",
+                self.destination.display()
+            ));
+        }
         sync_parent_directory(&self.destination)
     }
 
+    pub(super) fn can_rollback(&self) -> bool {
+        !self.committed
+    }
+
     pub(super) fn rollback(&mut self) -> Result<(), String> {
+        if self.committed {
+            return Ok(());
+        }
         remove_directory_if_present(&self.destination)?;
         let Some(backup) = self.backup.as_ref() else {
+            self.committed = true;
             return sync_parent_directory(&self.destination);
         };
         restore_replaced_directory(backup, &self.destination)?;
         self.backup = None;
+        self.committed = true;
         sync_parent_directory(&self.destination)
     }
 }
@@ -121,6 +144,7 @@ fn commit_staged_directory_with_sequence(
     let mut replacement = DirectoryReplacement {
         destination: destination.to_path_buf(),
         backup,
+        committed: false,
     };
     if let Err(error) = sync_parent_directory(destination) {
         let rollback = replacement.rollback();
@@ -167,8 +191,31 @@ pub(super) fn inject_commit_failure(destination: &Path) {
 }
 
 #[cfg(test)]
+pub(super) fn inject_finalize_sync_failure(destination: &Path) {
+    INJECT_FINALIZE_SYNC_FAILURE.with(|failure| {
+        *failure.borrow_mut() = Some(destination.to_path_buf());
+    });
+}
+
+#[cfg(test)]
 fn should_inject_commit_failure(destination: &Path) -> bool {
     INJECT_COMMIT_FAILURE.with(|failure| {
+        let mut failure = failure.borrow_mut();
+        if failure
+            .as_ref()
+            .is_some_and(|expected| expected == destination)
+        {
+            failure.take();
+            true
+        } else {
+            false
+        }
+    })
+}
+
+#[cfg(test)]
+fn should_inject_finalize_sync_failure(destination: &Path) -> bool {
+    INJECT_FINALIZE_SYNC_FAILURE.with(|failure| {
         let mut failure = failure.borrow_mut();
         if failure
             .as_ref()

@@ -165,15 +165,19 @@ fn install_meta_package(
         };
     if let Err(error) = meta_replacement.finalize() {
         let mut errors = vec![error];
-        if let Err(rollback_error) = meta_replacement.rollback() {
-            errors.push(rollback_error);
+        if meta_replacement.can_rollback() {
+            if let Err(rollback_error) = meta_replacement.rollback() {
+                errors.push(rollback_error);
+            }
+            return Err(rollback_installs(&mut installed_dependencies, errors));
         }
-        return Err(rollback_installs(&mut installed_dependencies, errors));
+        finalize_installs(&mut installed_dependencies, &mut errors);
+        return Err(errors);
     }
-    for installed in &mut installed_dependencies {
-        if let Err(error) = installed.replacement.finalize() {
-            return Err(vec![error]);
-        }
+    let mut finalize_errors = Vec::new();
+    finalize_installs(&mut installed_dependencies, &mut finalize_errors);
+    if !finalize_errors.is_empty() {
+        return Err(finalize_errors);
     }
     for (checked, installed) in checked_dependencies.iter().zip(&installed_dependencies) {
         report_installed(&checked.manifest, &installed.paths);
@@ -186,6 +190,14 @@ fn install_meta_package(
         meta.dependencies.len()
     );
     Ok(())
+}
+
+fn finalize_installs(installed_dependencies: &mut [InstalledPackage], errors: &mut Vec<String>) {
+    for installed in installed_dependencies {
+        if let Err(error) = installed.replacement.finalize() {
+            errors.push(error);
+        }
+    }
 }
 
 struct InstalledPaths {

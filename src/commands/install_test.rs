@@ -577,6 +577,68 @@ path = "../dependency"
 }
 
 #[test]
+fn meta_finalize_failure_after_backup_disposal_preserves_committed_snapshot() {
+    let root = temp_root("meta-finalize-post-commit");
+    let packages = root.join("packages");
+    let dependency = packages.join("dependency");
+    let meta = packages.join("meta");
+    let store = root.join("store");
+    write_interfaces_only_package(&dependency, "dependency");
+    fs::create_dir_all(&meta).expect("create meta package");
+    fs::write(
+        meta.join("cista.toml"),
+        r#"[source]
+package = "meta"
+version = "0.1.0"
+role = "meta"
+
+[[dependencies]]
+package = "dependency"
+version = "0.1.0"
+path = "../dependency"
+"#,
+    )
+    .expect("write meta manifest");
+
+    let installed = store.join("meta/0.1.0");
+    fs::create_dir_all(&installed).expect("create old meta snapshot");
+    fs::write(installed.join("cista.toml"), "old meta snapshot\n")
+        .expect("write old meta snapshot");
+
+    fs_util::inject_finalize_sync_failure(
+        &installed
+            .canonicalize()
+            .expect("canonical installed meta path"),
+    );
+    let error = run(InstallArgs {
+        path: Some(meta),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("post-commit finalize failure should still report error");
+    assert!(error
+        .iter()
+        .any(|message| message.contains("injected failure after committing replacement")));
+
+    let parsed = crate::manifest::read_meta_manifest(&installed.join("cista.toml"))
+        .expect("read committed meta manifest")
+        .expect("committed manifest should be meta");
+    assert_eq!(parsed.source.package, "meta");
+    assert_eq!(parsed.dependencies.len(), 1);
+    assert!(
+        store.join("dependency/0.1.0").is_dir(),
+        "committed dependency must not be rolled back after meta commit is durable enough to keep"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn install_real_norma_platform_default_builds_nested_import_without_dependency() {
     let root = temp_root("real-norma-platform-default");
     let store = root.join("store");
