@@ -1000,11 +1000,10 @@ path = "../second"
             .expect("write old interface");
     }
 
-    fs_util::inject_commit_failure(
-        &second_installed
-            .canonicalize()
-            .expect("canonical second dependency snapshot"),
-    );
+    let second_installed_canonical = second_installed
+        .canonicalize()
+        .expect("canonical second dependency snapshot");
+    fs_util::inject_commit_failure(&second_installed_canonical);
     let error = run(InstallArgs {
         path: Some(meta),
         package: None,
@@ -1018,7 +1017,7 @@ path = "../second"
     .expect_err("later dependency commit failure should fail meta install");
     let expected_failure = format!(
         "injected failure before installing replacement directory {}",
-        second_installed.display()
+        second_installed_canonical.display()
     );
     assert!(
         error
