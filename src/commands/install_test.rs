@@ -1016,9 +1016,16 @@ path = "../second"
         verify_target_build: false,
     })
     .expect_err("later dependency commit failure should fail meta install");
-    assert!(error
-        .iter()
-        .any(|message| message.contains("injected failure")));
+    let expected_failure = format!(
+        "injected failure before installing replacement directory {}",
+        second_installed.display()
+    );
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains(&expected_failure)),
+        "commit failure must target only the second dependency: {error:?}"
+    );
 
     for installed in [&first_installed, &second_installed] {
         assert_eq!(
