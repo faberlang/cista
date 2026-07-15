@@ -1,14 +1,16 @@
 # Delivery Spec: Phase A — Local library store loop
 
-**Status**: active  
+**Status**: shipped — Phase A delivery history (verified in current cista tests)
 **Goal**: `docs/factory/cista-package-store/goal.md`  
 **Unit**: Phase A — finish local library store (close the loop)  
 **Repos**: cista, faber, examples (cross-repo file contract; no crate deps)
 
-## Interpreted Unit
+## Historical Interpreted Unit
 
-Close the local library package loop: install a Rust lib into `$CISTAE_HOME`,
-rewrite project `faber.lock` with absolute paths, and make `faber check` /
+Close the local library package loop. This phase is shipped; the following
+requirements and validation remain as delivery history: install a Rust lib into
+`$CISTAE_HOME`, rewrite project `faber.lock` with absolute paths, and make
+`faber check` /
 `faber build` consume those locked interface (and validate artifact) paths
 without knowing about cista or `CISTAE_HOME`.
 
