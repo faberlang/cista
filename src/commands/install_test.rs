@@ -962,6 +962,102 @@ path = "../dependency"
 }
 
 #[test]
+fn meta_dependency_commit_failure_rolls_back_prior_snapshots() {
+    let root = temp_root("meta-dependency-commit-failure");
+    let packages = root.join("packages");
+    let first = packages.join("first");
+    let second = packages.join("second");
+    let meta = packages.join("meta");
+    let store = root.join("store");
+    write_interfaces_only_package(&first, "first");
+    write_interfaces_only_package(&second, "second");
+    fs::create_dir_all(&meta).expect("create meta package");
+    fs::write(
+        meta.join("cista.toml"),
+        r#"[source]
+package = "meta"
+version = "0.1.0"
+role = "meta"
+
+[[dependencies]]
+package = "first"
+version = "0.1.0"
+path = "../first"
+
+[[dependencies]]
+package = "second"
+version = "0.1.0"
+path = "../second"
+"#,
+    )
+    .expect("write meta manifest");
+
+    let first_installed = store.join("first/0.1.0");
+    let second_installed = store.join("second/0.1.0");
+    for installed in [&first_installed, &second_installed] {
+        fs::create_dir_all(installed.join("interfaces")).expect("create old interfaces");
+        fs::write(installed.join("interfaces/old.fab"), "old interface\n")
+            .expect("write old interface");
+    }
+
+    fs_util::inject_commit_failure(
+        &second_installed
+            .canonicalize()
+            .expect("canonical second dependency snapshot"),
+    );
+    let error = run(InstallArgs {
+        path: Some(meta),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("later dependency commit failure should fail meta install");
+    assert!(error
+        .iter()
+        .any(|message| message.contains("injected failure")));
+
+    for installed in [&first_installed, &second_installed] {
+        assert_eq!(
+            fs::read_to_string(installed.join("interfaces/old.fab"))
+                .expect("read restored interface"),
+            "old interface\n"
+        );
+        assert!(!installed.join("interfaces/example.fab").exists());
+    }
+    assert!(!store.join("meta/0.1.0").exists());
+
+    for namespace in [
+        store.join("first"),
+        store.join("second"),
+        store.join("meta"),
+    ] {
+        if !namespace.exists() {
+            continue;
+        }
+        let leftovers = fs::read_dir(&namespace)
+            .expect("read package namespace")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.contains(".incoming-") || name.contains(".replaced-")
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            leftovers.is_empty(),
+            "failed meta install left transaction entries in {}: {leftovers:?}",
+            namespace.display()
+        );
+    }
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
 fn meta_finalize_failure_after_backup_disposal_preserves_committed_snapshot() {
     let root = temp_root("meta-finalize-post-commit");
     let packages = root.join("packages");
