@@ -1,0 +1,189 @@
+name: Release Cista
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing Cista source tag to release, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_REPO: faberlang/releases
+  COMPONENT: cista
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: cista
+          - os: macos-13
+            target: x86_64-apple-darwin
+            binary: cista
+          - os: macos-14
+            target: aarch64-apple-darwin
+            binary: cista
+
+    steps:
+      - name: Resolve source tag
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Cista releases require a stable SemVer source tag like v0.1.0; got $tag" >&2
+            exit 1
+          fi
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${COMPONENT}-${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out Cista source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.tag }}
+
+      - name: Validate crate version
+        shell: bash
+        run: |
+          set -euo pipefail
+          crate_version="$(
+            awk '
+              /^\[package\]/ { in_package=1; next }
+              /^\[/ && in_package { exit }
+              in_package && /^version[[:space:]]*=/ {
+                gsub(/"/, "", $3)
+                print $3
+                exit
+              }
+            ' Cargo.toml
+          )"
+          if [[ "$crate_version" != "${{ steps.source.outputs.version }}" ]]; then
+            echo "tag ${{ steps.source.outputs.tag }} does not match Cargo.toml version $crate_version" >&2
+            exit 1
+          fi
+
+      - name: Install Rust target
+        shell: bash
+        run: rustup target add "${{ matrix.target }}"
+
+      - name: Build Cista CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --bin cista --target "${{ matrix.target }}"
+          "target/${{ matrix.target }}/release/${{ matrix.binary }}" --version
+
+      - name: Package artifact
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.source.outputs.version }}"
+          target="${{ matrix.target }}"
+          staging="dist/${COMPONENT}-v${version}-${target}"
+          mkdir -p "$staging"
+          cp "target/${target}/release/${{ matrix.binary }}" "$staging/${COMPONENT}"
+          chmod +x "$staging/${COMPONENT}"
+          cat > "$staging/README.txt" <<EOF
+          ${COMPONENT} v${version}
+          target: ${target}
+          source: https://github.com/faberlang/cista/tree/${{ steps.source.outputs.tag }}
+          EOF
+          archive="${COMPONENT}-v${version}-${target}.tar.gz"
+          tar -C dist -czf "dist/${archive}" "${COMPONENT}-v${version}-${target}"
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "dist/${archive}" > "dist/${archive}.sha256"
+          else
+            sha256sum "dist/${archive}" > "dist/${archive}.sha256"
+          fi
+          echo "archive=dist/${archive}" >> "$GITHUB_OUTPUT"
+          echo "checksum=dist/${archive}.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.COMPONENT }}-${{ steps.source.outputs.version }}-${{ matrix.target }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.checksum }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish public release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Resolve source tag
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${COMPONENT}-${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to shared public release repo
+        env:
+          GH_TOKEN: ${{ secrets.FABERLANG_RELEASES_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "FABERLANG_RELEASES_TOKEN must allow writes to ${RELEASE_REPO}" >&2
+            exit 1
+          fi
+          release_tag="${{ steps.source.outputs.release_tag }}"
+          source_tag="${{ steps.source.outputs.tag }}"
+          version="${{ steps.source.outputs.version }}"
+          notes="$(mktemp)"
+          cat > "$notes" <<EOF
+          Cista ${version}
+
+          Source tag: faberlang/cista ${source_tag}
+
+          This release contains the Cista package-store CLI built from the public
+          Cista source repository. Public artifacts are collected in
+          ${RELEASE_REPO} with component-prefixed tags.
+          EOF
+          if gh release view "$release_tag" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
+            gh release upload "$release_tag" dist/* --repo "$RELEASE_REPO" --clobber
+          else
+            gh release create "$release_tag" dist/* \
+              --repo "$RELEASE_REPO" \
+              --title "Cista ${version}" \
+              --notes-file "$notes"
+          fi

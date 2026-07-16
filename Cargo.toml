@@ -23,4 +23,4 @@ tar = "0.4.44"
 ureq = { version = "3.1.4", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
-hygiene-ratchet = { path = "../radix/crates/hygiene-ratchet" }
+hygiene-ratchet = { path = "crates/hygiene-ratchet" }
