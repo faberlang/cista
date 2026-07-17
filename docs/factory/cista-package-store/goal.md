@@ -28,8 +28,10 @@ implementation queue.
 - `cista` owns package-store install, inspect, remove, `run`, local/dev
   registry publish/fetch, authenticated remote transport, credential storage,
   cache staging, and path containment.
-- `faber` consumes the documented file contracts and remains independent of the
-  `cista` crate, process, and store discovery during normal builds.
+- Normal `faber check` / `faber build` consumes documented package facts
+  without walking `$CISTAE_HOME` or relying on mutable package-store discovery.
+  Intentional product-composition code, such as a `faber install` facade, may
+  call the `cista` crate/API when that is the clean product seam.
 - Package roles `lib`, `bin`, and `meta` are part of the same store model.
 
 ### Archived phase history
@@ -315,9 +317,11 @@ Before lowering this goal into delivery, inspect:
   Rust.
 - `cista.dev` is the planned canonical package host for publishing and
   retrieval; registry protocol and hosting implementation remain deferred.
-- `faber` and `cista` must not share Rust implementation types. Their shared
-  contract is the documented TOML schema, store layout, environment variables,
-  CLI behavior, and process exit semantics.
+- The stable package-store contract is the documented TOML schema, store
+  layout, environment variables, CLI behavior, and process exit semantics.
+  Historical phases avoided shared Rust implementation types; current product
+  composition may add deliberate `faber` → `cista` API use for install-facing
+  product seams without changing normal build discovery.
 - Do not weaken current package provenance checks to make a design fit.
 
 ## Store Layout
@@ -516,10 +520,11 @@ See `phase-b-problem.md` for the full problem lock.
 
 ## Resolver Output
 
-For Phase A, `faber` owns the build-time resolved package record internally.
-`cista` owns its own installed-package/store view internally. The two repos must
-not share Rust types; both implementations conform to the same documented
-file/process contract.
+For Phase A, `faber` owned the build-time resolved package record internally.
+`cista` owned its own installed-package/store view internally. The two repos did
+not share Rust types; both implementations conformed to the same documented
+file/process contract. This describes shipped Phase A history, not current
+product-composition law.
 
 The build resolver inside `faber` should produce one concrete resolved package
 record for each provider-qualified import:
@@ -536,10 +541,10 @@ importa ex "mathesis:mathesis"
   -> binding table or generated binding policy
 ```
 
-The first implementation should define this internal `faber` output shape before
-growing package install behavior further. The cross-repo contract is still the
-on-disk store layout, `cista.toml`, `faber.toml`, and `faber.lock`, not a shared
-library type.
+The first implementation defined this internal `faber` output shape before
+growing package install behavior further. The durable package-store contract is
+the on-disk store layout, `cista.toml`, `faber.toml`, and `faber.lock`; product
+facades may still use a deliberate `faber` → `cista` API seam.
 
 ## Project Dependency Intent
 
@@ -763,8 +768,9 @@ Phases A–F.
 
 **Status intent:** shipped (factory Phase A).
 
-- Keep `faber` and `cista` repo-separated: no Rust dependency in either
-  direction; process spawning and file contracts only.
+- Historical Phase A repo-separation rule: no Rust dependency in either
+  direction; process spawning and file contracts only. This remains shipped
+  history, not current product-composition law.
 - Keep `$CISTAE_HOME` / `~/.faber/cistae`, `interfaces/`, `targets/<language>/`.
 - Flesh **inspect / list / remove** against the store (`package show`,
   `package list`, `package files`, `remove` as needed).
@@ -783,7 +789,8 @@ Phases A–F.
   `faber.lock` only; it must not know about `cista`, `CISTAE_HOME`, or
   package-manager store discovery.
 - `cista install --path` may spawn `faber` and native tools for validation/build
-  steps, but must not link against `faber` or `radix`.
+  steps. `cista` must not gain a `radix`/compiler crate dependency; historical
+  Phase A also avoided linking to `faber`.
 - `cista` store discovery order remains as under **Store discovery
   (cista-owned)** above.
 
@@ -810,13 +817,15 @@ any).
   language carrier crate for generated Rust.
 - Same store layout concepts as third-party packages; bundled vs user-store
   instances differ only by root (cista/toolchain discovery).
-- Provision packaged Norma paths for faber without teaching faber about cista:
-  implicit lock injection, toolchain default path records, or equivalent
-  (delivery chooses mechanism — Q6 in `phase-b-problem.md`).
+- Provision packaged Norma paths for normal `faber check` / `faber build`
+  without making those commands discover `$CISTAE_HOME`: implicit lock
+  injection, toolchain default path records, or equivalent (delivery chooses
+  mechanism — Q6 in `phase-b-problem.md`).
 - Preserve **dev fallback** (`FABER_LIBRARY_HOME` / sibling `norma`) until the
   packaged path is proven; `cista` fails closed with searched-path diagnostics
   when store lookup is required and fails.
-- `faber` still does not discover `$CISTAE_HOME` or call `cista`.
+- Normal `faber check` / `faber build` still does not discover `$CISTAE_HOME`
+  or call the Cista store dynamically.
 
 **Exit:** a Faber package typechecks/builds against `norma:*` using packaged
 interface paths (not only sibling `FABER_LIBRARY_HOME`), **without** declaring
@@ -992,8 +1001,8 @@ meaningful package identity, and do not add automatic retries around publish.
 - Store/resolver routing must remain revertible without changing Faber language
   grammar.
 - Historical package-store phases kept `cista` free of radix or `faber` crate
-  dependencies; future product-composition units may choose a direct crate seam
-  if that is cleaner than shelling out.
+  dependencies; current product-composition units may choose a direct
+  `faber` → `cista` crate/API seam if that is cleaner than shelling out.
 
 ## Acceptance Criteria
 
@@ -1007,8 +1016,9 @@ meaningful package identity, and do not add automatic retries around publish.
 - `faber.toml` owns project dependency intent; `faber.lock` owns resolved build
   inputs.
 - Historical phases avoided teaching `faber` about `cista`, `CISTAE_HOME`, or
-  cista-specific store discovery during normal builds; the install-facade
-  migration may revise that boundary deliberately.
+  cista-specific store discovery during normal builds. Current law keeps normal
+  build discovery lock/path based while allowing deliberate install-facade
+  composition through the `cista` crate/API.
 - Interface contracts stay separate from target-native binding metadata.
 - Manifest shape remains `[source]`, `[target]`, `[[bindings]]` (extend carefully
   for bin/meta roles rather than inventing a second store).
@@ -1027,7 +1037,7 @@ meaningful package identity, and do not add automatic retries around publish.
   intent + `faber.lock` pin + faber demo build from locked paths.
 - **B:** Norma package installable to store; `norma:*` builds from packaged
   interface paths without `norma` in `faber.toml`; dev fallback still works;
-  no faber/`CISTAE_HOME` coupling.
+  no normal-build faber/`CISTAE_HOME` discovery coupling.
 - **C:** at least one coreutils-style bin installable to the store.
 - **D:** `cista run` works for that installed bin with arg passthrough.
 - **E:** meta install expands dependencies (when implemented).
@@ -1069,9 +1079,10 @@ meaningful package identity, and do not add automatic retries around publish.
 - Project dependency intent lives in `faber.toml`; resolved build inputs live in
   `faber.lock`.
 - Historical `requirit.toml` is not part of Phase A.
-- `faber` and `cista` do not share Rust types or crate dependencies. Each repo
-  owns internal representations that conform to the documented file/process
-  contract.
+- Phase A shipped without shared Rust types or crate dependencies. Each repo
+  owned internal representations that conformed to the documented file/process
+  contract; this is historical Phase A law, superseded for intentional
+  product-composition seams.
 - `CISTAE_HOME` is the Phase A package-manager store environment variable;
   `faber` does not read it during normal builds.
 - Store discovery order is **cista-owned**; `faber` does not walk it.
@@ -1132,9 +1143,10 @@ meaningful package identity, and do not add automatic retries around publish.
 - Stop if implementation skips Phase A (`faber` consuming locked package
   records) and jumps to registry or bin-only demos that still need sibling-repo
   hacks.
-- Stop if either `faber` or `cista` adds a Rust crate dependency on the other,
-  or on a shared workspace-only helper crate, to satisfy the package-store
-  integration.
+- Stop if `cista` adds a Rust crate dependency on `faber`, `radix`, or a shared
+  workspace-only helper crate to satisfy package-store integration. A deliberate
+  `faber` → `cista` dependency for the product install facade is allowed by the
+  product-composition decision.
 - Stop if the design requires target-specific annotations in Faber interface
   files for every supported backend.
 - Stop if the package model only works for Norma and cannot describe a future
