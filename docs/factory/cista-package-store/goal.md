@@ -1,13 +1,15 @@
 # Goal: Cista Package Store Model
 
-**Status**: Phase G and path-safety theme v1 closed; live cista.dev validation operator-gated
+**Status**: Phase G and path-safety theme v1 closed; live cista.dev validation operator-gated; repo-separation invariant superseded for Faber product composition
 **Created**: 2026-06-21
-**Updated**: 2026-07-13
+**Updated**: 2026-07-17
 **Target Repo**: `/Users/ianzepp/work/faberlang/cista`
 **Factory Artifact Dir**: `docs/factory/cista-package-store/`
 **Related**: `phase-a-delivery.md` (shipped), `phase-b-problem.md` (problem lock), `phase-b-delivery.md` (Phase B closed)
-**Note**: Implementation lives in public sibling `faberlang/cista` (no radix dep;
-no crate dependency on sibling `faber`).
+**Note**: Implementation lives in public sibling `faberlang/cista`. Historical
+no-crate-dependency separation from sibling `faber` is superseded by
+`../../../../faber/docs/design/product-composition-radix-cista.md`: Faber may
+compose Radix and Cista directly when that is the clean product seam.
 **Primary Goal**: ship Faber's shared package artifact store, install lifecycle,
 faber consumption of installed packages, package roles (lib / bin / meta),
 `cista run` for installed apps, and later cista.dev client surfaces.
@@ -135,26 +137,27 @@ Norma uses the **same store package shape** as other packages. Product-wise
 Norma is a **hard platform default** (always available; not listed in app
 `faber.toml` `[dependencies]`), not a second store category.
 
-## Repo Separation Invariant
+## Repo Separation Invariant (superseded for product composition)
 
-`faber` and `cista` remain independently buildable sibling repositories. Neither
-repo may add a Rust crate dependency on the other, directly or through a shared
-workspace-only helper crate. Cross-repo integration must use stable file
-formats, documented store paths, environment variables, command-line flags, exit
-codes, and spawned processes.
+**Superseded by:**
+`../../../../faber/docs/design/product-composition-radix-cista.md` (operator
+decision, 2026-07-17).
 
-`faber` is lower in the toolchain. It owns Faber project manifests, Faber's
-build lockfile, package source loading, typechecking, code generation, and build
-semantics. It must not know that `cista` exists: no `cista` crate dependency, no
-`cista` process dependency, no `cista.lock`, and no cista-specific store
-discovery in ordinary builds.
+Historical law kept `faber` and `cista` separated by file contracts and process
+spawns: no Rust crate dependency, no process dependency from Faber to Cista, and
+no Cista store discovery in ordinary Faber builds. That rule is preserved here
+as delivery history, not current product law.
 
-`cista` owns package-store installation, inspection, removal, cache/registry
-operations, and installed artifact lifecycle. When `cista` needs Faber-language
-validation or compilation, it invokes the `faber` executable. When `cista`
-changes a project's installed dependency set, it updates the project-owned
-`faber.lock` file that `faber` can consume without knowing which package manager
-produced it.
+Current product law: Faber is the user product composed from Radix compiler
+capability plus Cista package-store capability. `faber` may crate-depend on
+`cista` the same way it may depend on `radix` when that produces the clean
+product seam. The default migration is for `faber install` to become the facade
+over the Cista store; `FABER_LIBRARY_HOME` remains a local-development override.
+
+`cista` still owns package-store installation, inspection, removal,
+cache/registry operations, and installed artifact lifecycle. Stable file
+contracts and spawned processes remain valid implementation tools, but they are
+no longer the only allowed integration boundary.
 
 ## Package roles
 
@@ -191,8 +194,9 @@ Installable units share one store layout but differ by role:
 - Support **meta** packages as dependency sets only.
 - Treat **`cista.dev`** as the later registry host; client fetch/publish is a
   late phase, not the first milestone.
-- Keep cista free of radix/compiler linkage and free of a crate dependency on
-  sibling `faber`; call `faber`/native tools as needed for compile steps.
+- Keep cista free of radix/compiler linkage unless a later product unit decides
+  otherwise; historical crate-dependency separation from sibling `faber` is no
+  longer product law. Call `faber`/native tools as needed for compile steps.
 
 ## Non-goals (global)
 
@@ -987,21 +991,24 @@ meaningful package identity, and do not add automatic retries around publish.
   provider/target diagnostic — never silent wrong calls.
 - Store/resolver routing must remain revertible without changing Faber language
   grammar.
-- `cista` must not gain a radix or `faber` crate dependency; compile steps shell
-  out or call public tools (`faber`, `cargo`, etc.) as needed.
+- Historical package-store phases kept `cista` free of radix or `faber` crate
+  dependencies; future product-composition units may choose a direct crate seam
+  if that is cleaner than shelling out.
 
 ## Acceptance Criteria
 
 ### Model (doc + manifests)
 
-- Cista is the package-store concept; `faber` remains project source workflow.
-- `faber` and `cista` remain separate repositories with no crate dependency in
-  either direction.
+- Cista is the package-store concept; `faber` remains project source workflow
+  and may front Cista as the product install facade.
+- `faber` and `cista` remain separate repositories, but the historical no-crate
+  dependency rule is superseded for product composition.
 - `$CISTAE_HOME` is the shared store; layouts use `interfaces/` and `targets/`.
 - `faber.toml` owns project dependency intent; `faber.lock` owns resolved build
   inputs.
-- `faber` does not know about `cista`, `CISTAE_HOME`, or cista-specific store
-  discovery during normal builds.
+- Historical phases avoided teaching `faber` about `cista`, `CISTAE_HOME`, or
+  cista-specific store discovery during normal builds; the install-facade
+  migration may revise that boundary deliberately.
 - Interface contracts stay separate from target-native binding metadata.
 - Manifest shape remains `[source]`, `[target]`, `[[bindings]]` (extend carefully
   for bin/meta roles rather than inventing a second store).
