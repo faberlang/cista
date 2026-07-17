@@ -15,7 +15,8 @@ mod fs_util;
 mod graph;
 mod init;
 mod inspect;
-mod install;
+/// Local package install into the shared store (public for Faber product composition).
+pub mod install;
 mod login;
 mod logout;
 mod metadata;

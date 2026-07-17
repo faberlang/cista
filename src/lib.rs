@@ -7,6 +7,12 @@
 pub mod cli;
 pub mod commands;
 pub mod credentials;
+
+/// Install a package into the shared store (path or registry pin).
+///
+/// Product CLIs such as `faber` call this in-process rather than spawning the
+/// `cista` binary. See `faber/docs/design/product-composition-radix-cista.md`.
+pub use commands::install::run as install;
 pub mod faber_lock;
 pub mod manifest;
 pub mod package;
