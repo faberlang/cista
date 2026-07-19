@@ -203,3 +203,7 @@ pub fn read_meta_manifest(path: &Path) -> Result<Option<MetaManifest>, String> {
         .map(Some)
         .map_err(|err| format!("failed to parse meta manifest {}: {err}", path.display()))
 }
+
+#[cfg(test)]
+#[path = "manifest_test.rs"]
+mod tests;
