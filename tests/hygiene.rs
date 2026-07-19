@@ -8,7 +8,6 @@ fn config() -> ScanConfig {
         source_roots: vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src")],
         exclude_path_suffixes: Vec::new(),
         subtract_self_expect: false,
-        check_companion_convention: false,
     }
 }
 

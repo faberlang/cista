@@ -40,7 +40,6 @@ pub struct ScanConfig {
     pub source_roots: Vec<PathBuf>,
     pub exclude_path_suffixes: Vec<String>,
     pub subtract_self_expect: bool,
-    pub check_companion_convention: bool,
 }
 
 #[derive(Clone)]
@@ -50,6 +49,10 @@ pub struct SourceFile {
     pub scrubbed: String,
 }
 
+/// Collect non-test Rust source files from the configured source roots.
+///
+/// Skips `tests/` directories, files ending in `_test.rs` or `.test.rs`,
+/// files under `test_support` paths, and files matching `exclude_path_suffixes`.
 pub fn collect_production_files(config: &ScanConfig) -> Vec<SourceFile> {
     let mut files = Vec::new();
     for root in &config.source_roots {
@@ -101,6 +104,11 @@ fn collect_rs_files(dir: &Path, config: &ScanConfig, out: &mut Vec<SourceFile>) 
     }
 }
 
+/// Count banned patterns in scrubbed production sources.
+///
+/// Tracks `.unwrap()`, `.expect(`, `panic!(`, `unreachable!(`, `todo!(`,
+/// `unimplemented!(`, `let _ =`, inline `#[cfg(test)] mod tests {` blocks,
+/// and `#[test]` attributes.
 pub fn count_budgets(files: &[SourceFile], subtract_self_expect: bool) -> Counts {
     let mut counts = Counts::default();
     for file in files {
@@ -121,6 +129,7 @@ pub fn count_budgets(files: &[SourceFile], subtract_self_expect: bool) -> Counts
     counts
 }
 
+/// Panic if any observed count exceeds its budget ceiling.
 pub fn assert_budgets(counts: Counts, budgets: Budgets) {
     assert_budget(".unwrap()", counts.unwrap, budgets.unwrap);
     assert_budget(".expect(", counts.expect, budgets.expect);
@@ -145,6 +154,8 @@ pub fn assert_budgets(counts: Counts, budgets: Budgets) {
     );
 }
 
+/// Verify that every source file with a companion `_test.rs` file declares
+/// it via the `#[cfg(test)] #[path = "..."] mod tests;` convention.
 pub fn assert_companion_tests_use_cfg_path_module_convention(files: &[SourceFile]) {
     for file in files {
         let Some(companion) = companion_test_path(&file.path) else {
@@ -208,6 +219,9 @@ fn count_let_underscore(haystack: &str) -> usize {
         .count()
 }
 
+/// Replace comments, strings, char literals, and lifetimes with spaces.
+///
+/// Preserves newlines so line-oriented counting stays accurate.
 pub fn scrub_rust_source(source: &str) -> String {
     #[derive(Clone, Copy)]
     enum State {
