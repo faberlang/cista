@@ -220,6 +220,7 @@ fn remove_waits_for_store_mutation_lock() {
     fs::remove_dir_all(root).expect("remove fixture");
 }
 
+#[cfg(unix)]
 #[test]
 fn remove_empty_name_dir_handles_read_dir_failure() {
     use std::os::unix::fs::PermissionsExt;
