@@ -1,5 +1,7 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use super::*;
-use crate::manifest::{Binding, PackageRole, SourceSection, TargetSection};
+use crate::manifest::{Binding, PackageRole, SourceSection, TargetSection, TargetMode, SourceKind, BindingPolicy};
 use std::fs;
 
 fn temp_root(name: &str) -> PathBuf {
@@ -321,4 +323,303 @@ fn package_manifest_paths_must_resolve_symlinks_inside_package_root() {
     );
 
     fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+// --- verify_build=true ---
+
+#[test]
+fn validate_package_with_verify_build_rejects_non_rust_language() {
+    let root = temp_root("verify-build-non-rust");
+    let package = root.join("package");
+    fs::create_dir_all(package.join("interfaces")).expect("create interfaces");
+    fs::create_dir_all(package.join("target")).expect("create target source");
+
+    let mut manifest = buildable_manifest();
+    manifest.target.language = "python".to_owned();
+    fs::write(
+        package.join("cista.toml"),
+        toml::to_string_pretty(&manifest).expect("serialize manifest"),
+    )
+    .expect("write manifest");
+
+    let result = validate_package(&package, Path::new("cista.toml"), None, true);
+    let diagnostics = match result {
+        Err(diags) => diags,
+        Ok(_) => panic!("non-rust language must fail with verify_build=true"),
+    };
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.contains("only implemented for target.language")));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn validate_package_with_verify_build_skips_cargo_for_interfaces_only() {
+    let root = temp_root("verify-build-interfaces-only");
+    let package = root.join("package");
+    fs::create_dir_all(package.join("interfaces")).expect("create interfaces");
+
+    let mut manifest = buildable_manifest();
+    manifest.target.source = None;
+    manifest.target.compile = None;
+    manifest.target.binding_policy = BindingPolicy::Generated;
+    fs::write(
+        package.join("cista.toml"),
+        toml::to_string_pretty(&manifest).expect("serialize manifest"),
+    )
+    .expect("write manifest");
+
+    let result = validate_package(&package, Path::new("cista.toml"), None, true);
+    let diagnostics = match result {
+        Err(diags) => diags,
+        Ok(_) => panic!("interfaces-only must fail with verify_build=true"),
+    };
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.contains("nothing to check")));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+// TEST-BUG: The happy path for verify_target_build requires a real `cargo`
+// toolchain. This test is omitted because `validate_target_paths` (called
+// before verify_target_build) already requires Cargo.toml when target.source
+// is set and language is rust, so the verify_build=true code path can only
+// be reached when a Cargo.toml exists — which would trigger a real `cargo check`.
+
+#[test]
+fn validate_package_with_verify_build_is_disabled_by_default() {
+    let root = temp_root("verify-build-default");
+    let package = root.join("package");
+    fs::create_dir_all(package.join("interfaces")).expect("create interfaces");
+
+    let mut manifest = buildable_manifest();
+    manifest.target.source = None;
+    manifest.target.compile = None;
+    manifest.target.binding_policy = BindingPolicy::Generated;
+    fs::write(
+        package.join("cista.toml"),
+        toml::to_string_pretty(&manifest).expect("serialize manifest"),
+    )
+    .expect("write manifest");
+
+    let result = validate_package(&package, Path::new("cista.toml"), None, false);
+    assert!(
+        result.is_ok(),
+        "interfaces-only package should validate without verify_build"
+    );
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+// --- resolve_meta_dependency_path ---
+
+#[test]
+fn resolve_meta_dependency_rejects_empty_path() {
+    let root = temp_root("meta-empty-path");
+    fs::create_dir_all(&root).expect("create meta root");
+
+    let error = resolve_meta_dependency_path(&root, "dependency", Path::new(""))
+        .expect_err("empty path must be rejected");
+    assert!(error.contains("must not be empty"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn resolve_meta_dependency_rejects_absolute_path() {
+    let root = temp_root("meta-absolute-path");
+    fs::create_dir_all(&root).expect("create meta root");
+
+    let error =
+        resolve_meta_dependency_path(&root, "dependency", Path::new("/etc/passwd"))
+            .expect_err("absolute path must be rejected");
+    assert!(error.contains("must be relative"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn resolve_meta_dependency_resolves_sibling_path() {
+    let root = temp_root("meta-sibling");
+    let meta_root = root.join("meta-package");
+    let dep_root = root.join("dep-package");
+    fs::create_dir_all(&meta_root).expect("create meta root");
+    fs::create_dir_all(&dep_root).expect("create dep root");
+
+    let resolved =
+        resolve_meta_dependency_path(&meta_root, "dependency", Path::new("../dep-package"))
+            .expect("sibling path should resolve");
+    assert!(resolved.ends_with("dep-package"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn resolve_meta_dependency_rejects_traversal_beyond_collection() {
+    let root = temp_root("meta-escape");
+    let collection = root.join("collection");
+    let meta_root = collection.join("meta-package");
+    let outside = root.join("outside");
+    fs::create_dir_all(&meta_root).expect("create meta root");
+    fs::create_dir_all(&outside).expect("create outside dir");
+
+    let error = resolve_meta_dependency_path(
+        &meta_root,
+        "dependency",
+        Path::new("../../outside"),
+    )
+    .expect_err("traversal beyond collection must be rejected");
+    assert!(error.contains("resolves outside package collection"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+// --- validate_interfaces ---
+
+#[test]
+fn validate_interfaces_detects_missing_interface_directory() {
+    let root = temp_root("missing-interface-dir");
+    let package = root.join("package");
+    fs::create_dir_all(&package).expect("create package root");
+
+    let mut manifest = buildable_manifest();
+    manifest.bindings.push(crate::manifest::Binding {
+        source_module: "example".to_owned(),
+        source_symbol: "VALUE".to_owned(),
+        target: "example::VALUE".to_owned(),
+    });
+
+    let mut diagnostics = Vec::new();
+    let symbols =
+        validate_interfaces(&package, &package.join("interfaces"), &manifest, &mut diagnostics);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("does not point to a directory")),
+        "missing interface dir should produce diagnostic: {diagnostics:?}"
+    );
+    assert!(symbols.is_empty(), "no symbols should be extracted");
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn validate_interfaces_extracts_symbols_from_fab_files() {
+    let root = temp_root("extract-symbols");
+    let package = root.join("package");
+    let interfaces = package.join("interfaces");
+    fs::create_dir_all(&interfaces).expect("create interfaces dir");
+
+    fs::write(
+        interfaces.join("example.fab"),
+        "functio run(a: i32) -> i32\nfunctio setup()\n",
+    )
+    .expect("write interface file");
+
+    let mut manifest = buildable_manifest();
+    manifest.bindings.push(crate::manifest::Binding {
+        source_module: "example".to_owned(),
+        source_symbol: "run".to_owned(),
+        target: "example::run".to_owned(),
+    });
+
+    // Canonicalize package root so starts_with checks work when
+    // /tmp or /var is a symlink (macOS: /var -> /private/var).
+    let canonical_package = package.canonicalize().expect("canonicalize package root");
+    let mut diagnostics = Vec::new();
+    let symbols = validate_interfaces(&canonical_package, &interfaces, &manifest, &mut diagnostics);
+    assert!(
+        diagnostics.is_empty(),
+        "no diagnostics expected: {diagnostics:?}"
+    );
+    let example_symbols = symbols
+        .get("example")
+        .expect("example module should have symbols");
+    assert!(
+        example_symbols.contains("run"),
+        "should contain 'run' symbol"
+    );
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+// --- validate_target_paths ---
+
+#[test]
+fn validate_target_paths_rejects_missing_target_source() {
+    let root = temp_root("missing-target-source");
+    let package = root.join("package");
+    fs::create_dir_all(package.join("interfaces")).expect("create interfaces");
+
+    let manifest = buildable_manifest();
+    let paths = PackagePaths {
+        interfaces: Some(package.join("interfaces")),
+        target_source: Some(package.join("nonexistent")),
+        artifact: None,
+    };
+
+    let mut diagnostics = Vec::new();
+    validate_target_paths(&paths, &manifest, &mut diagnostics);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("does not point to a directory")),
+        "missing target source should produce diagnostic: {diagnostics:?}"
+    );
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn validate_target_paths_rejects_missing_artifact_file() {
+    let root = temp_root("missing-artifact");
+    let package = root.join("package");
+    fs::create_dir_all(package.join("interfaces")).expect("create interfaces");
+
+    let manifest = {
+        let mut m = buildable_manifest();
+        m.target.mode = TargetMode::Artifact;
+        m.source.kind = SourceKind::Artifact;
+        m.target.source = None;
+        m.target.compile = None;
+        m.target.triple = Some("test-triple".to_owned());
+        m.target.rustc = Some("rustc 1.88".to_owned());
+        m
+    };
+    let paths = PackagePaths {
+        interfaces: Some(package.join("interfaces")),
+        target_source: None,
+        artifact: Some(package.join("nonexistent.rlib")),
+    };
+
+    let mut diagnostics = Vec::new();
+    validate_target_paths(&paths, &manifest, &mut diagnostics);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("does not point to a file")),
+        "missing artifact should produce diagnostic: {diagnostics:?}"
+    );
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+// --- validate_bindings ---
+
+#[test]
+fn validate_bindings_reports_missing_symbol() {
+    let mut symbols = BTreeMap::new();
+    let mut module_symbols = BTreeSet::new();
+    module_symbols.insert("run".to_owned());
+    symbols.insert("example".to_owned(), module_symbols);
+
+    let manifest = {
+        let mut m = buildable_manifest();
+        m.bindings.push(crate::manifest::Binding {
+            source_module: "example".to_owned(),
+            source_symbol: "nonexistent".to_owned(),
+            target: "example::nonexistent".to_owned(),
+        });
+        m
+    };
+
+    let mut diagnostics = Vec::new();
+    validate_bindings(&manifest, &symbols, &mut diagnostics);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("not found in module")),
+        "missing symbol should produce diagnostic: {diagnostics:?}"
+    );
 }
