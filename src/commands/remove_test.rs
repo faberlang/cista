@@ -219,3 +219,25 @@ fn remove_waits_for_store_mutation_lock() {
 
     fs::remove_dir_all(root).expect("remove fixture");
 }
+
+#[test]
+fn remove_empty_name_dir_handles_read_dir_failure() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = fixture("remove-readdir-fail");
+    let name_dir = root.join("package_name");
+    fs::create_dir_all(&name_dir).expect("create package directory");
+
+    // Make the directory unreadable so read_dir fails.
+    fs::set_permissions(&name_dir, fs::Permissions::from_mode(0o000))
+        .expect("remove read permissions");
+
+    let error = remove_empty_name_dir(&name_dir)
+        .expect_err("unreadable directory must fail");
+    assert!(error.contains("failed to inspect package directory"));
+
+    // Restore permissions for cleanup.
+    fs::set_permissions(&name_dir, fs::Permissions::from_mode(0o755))
+        .expect("restore permissions");
+    fs::remove_dir_all(root).expect("remove fixture");
+}
