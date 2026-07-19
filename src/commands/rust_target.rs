@@ -169,3 +169,7 @@ fn ensure_rustc_success(output: &Output, label: &str) -> Result<(), String> {
         Err(format!("{label} failed with status {}", output.status))
     }
 }
+
+#[cfg(test)]
+#[path = "rust_target_test.rs"]
+mod tests;
