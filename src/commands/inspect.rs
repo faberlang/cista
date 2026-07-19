@@ -57,3 +57,7 @@ fn print_manifest_summary(manifest: &crate::manifest::CistaManifest) {
     );
     println!("bindings: {}", manifest.bindings.len());
 }
+
+#[cfg(test)]
+#[path = "inspect_test.rs"]
+mod tests;
