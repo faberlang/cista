@@ -66,3 +66,72 @@ fn failed_replacement_removes_temporary_credentials() {
     assert!(destination.is_dir());
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn remove_returns_false_when_origin_not_found() {
+    let path = temp_path();
+    store(&path, "https://cista.dev", "secret").unwrap();
+
+    let result = remove(&path, "https://nonexistent.example")
+        .expect("remove for unknown origin must succeed");
+    assert!(!result, "remove must return false when origin is not stored");
+
+    // Verify existing credential is preserved.
+    assert_eq!(
+        token(&path, "https://cista.dev").unwrap().as_deref(),
+        Some("secret")
+    );
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn read_corrupted_credentials_returns_error() {
+    let path = temp_path();
+    // Write invalid TOML to the credentials path.
+    // On Unix, create with owner-only permissions so verify_permissions passes.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::write(&path, "this is not valid toml {{{").expect("write corrupted credentials");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .expect("set owner-only permissions");
+    }
+    #[cfg(not(unix))]
+    fs::write(&path, "this is not valid toml {{{").expect("write corrupted credentials");
+
+    let error = token(&path, "https://cista.dev")
+        .expect_err("corrupted credentials must produce an error");
+    assert!(error.contains("failed to parse")
+        || error.contains("must not be accessible"));
+    fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn read_missing_credentials_returns_defaults() {
+    let path = temp_path();
+    // File does not exist. read() should return an empty CredentialFile.
+    let result = token(&path, "https://cista.dev")
+        .expect("missing credentials file must not error");
+    assert!(result.is_none(), "token must be None for missing credentials");
+}
+
+#[test]
+fn store_creates_parent_directory() {
+    let base = std::env::temp_dir().join(format!(
+        "cista-credentials-create-parent-{}",
+        std::process::id(),
+    ));
+    let path = base.join("subdir").join("credentials.toml");
+    // Ensure parent does not exist.
+    let _ = fs::remove_dir_all(&base);
+
+    store(&path, "https://cista.dev", "secret")
+        .expect("store must create parent directory");
+    assert!(path.is_file(), "credentials file must exist after store");
+    assert_eq!(
+        token(&path, "https://cista.dev").unwrap().as_deref(),
+        Some("secret")
+    );
+    fs::remove_file(&path).unwrap();
+    fs::remove_dir_all(&base).unwrap();
+}
