@@ -68,6 +68,11 @@ impl std::fmt::Debug for RegistryHttpClient {
 
 impl RegistryHttpClient {
     /// Construct a client for an HTTP(S) registry origin.
+    ///
+    /// # Errors
+    /// Returns an error when the URL is not a valid HTTP(S) origin, when
+    /// credentials are supplied over plain HTTP, or when the bearer token is
+    /// empty.
     pub fn new(base_url: &str, bearer_token: Option<&str>) -> Result<Self, String> {
         Self::with_transport(base_url, bearer_token, Box::new(UreqTransport))
     }
@@ -110,11 +115,19 @@ impl RegistryHttpClient {
     }
 
     /// Fetch an immutable package archive by exact package identity.
+    ///
+    /// # Errors
+    /// Returns an error when the package identity is invalid or the HTTP request
+    /// fails.
     pub fn fetch_package(&self, name: &str, version: &str) -> Result<Vec<u8>, String> {
         self.execute(Method::Get, &package_path(name, version)?, Vec::new())
     }
 
     /// Publish an immutable package archive by exact package identity.
+    ///
+    /// # Errors
+    /// Returns an error when the package identity is invalid or the HTTP request
+    /// fails.
     pub fn publish_package(
         &self,
         name: &str,

@@ -183,6 +183,10 @@ pub fn manifest_path(package_root: &Path, manifest_name: Option<&Path>) -> PathB
 }
 
 /// Read and parse a `cista.toml` manifest from disk.
+///
+/// # Errors
+/// Returns an error when the file cannot be read or the TOML content does not
+/// match the [`CistaManifest`] schema.
 pub fn read_manifest(path: &Path) -> Result<CistaManifest, String> {
     let contents = fs::read_to_string(path)
         .map_err(|err| format!("failed to read manifest {}: {err}", path.display()))?;
@@ -191,6 +195,10 @@ pub fn read_manifest(path: &Path) -> Result<CistaManifest, String> {
 }
 
 /// Read a minimal meta-package manifest when `source.role = "meta"`.
+///
+/// # Errors
+/// Returns an error when the file cannot be read or the TOML content is
+/// invalid.
 pub fn read_meta_manifest(path: &Path) -> Result<Option<MetaManifest>, String> {
     let contents = fs::read_to_string(path)
         .map_err(|err| format!("failed to read manifest {}: {err}", path.display()))?;

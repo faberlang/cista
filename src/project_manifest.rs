@@ -35,6 +35,10 @@ pub struct ProjectPackage {
 }
 
 /// Read a project manifest for dependency declaration checks.
+///
+/// # Errors
+/// Returns an error when the file cannot be read, the TOML cannot be parsed,
+/// or required fields (`package.name`) are missing.
 pub fn read_project_manifest(path: &Path) -> Result<ProjectManifest, String> {
     let contents = fs::read_to_string(path)
         .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
@@ -103,6 +107,10 @@ fn parse_dependencies_loose(contents: &str, path: &Path) -> Result<ProjectManife
 }
 
 /// Require an exact dependency pin for lock rewrite.
+///
+/// # Errors
+/// Returns an error when the dependency is not declared in the manifest or the
+/// declared version does not match the installed version.
 pub fn require_exact_dependency(
     manifest: &ProjectManifest,
     package: &str,

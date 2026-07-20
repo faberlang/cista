@@ -81,6 +81,10 @@ pub struct LockedPackage {
 }
 
 /// Read a lockfile if present; missing file yields an empty lock.
+///
+/// # Errors
+/// Returns an error when the file cannot be read or the TOML content is
+/// invalid.
 pub fn read_lock(path: &Path) -> Result<FaberLock, String> {
     if !path.exists() {
         return Ok(FaberLock::default());
@@ -91,6 +95,11 @@ pub fn read_lock(path: &Path) -> Result<FaberLock, String> {
 }
 
 /// Write a lockfile with stable package ordering.
+///
+/// # Errors
+/// Returns an error when the lock cannot be serialized, the parent directory
+/// cannot be created, or the atomic write-and-replace sequence fails at any
+/// step (rename, sync, or cleanup).
 pub fn write_lock(path: &Path, lock: &FaberLock) -> Result<(), String> {
     write_lock_with_commit_state(path, lock).map_err(LockWriteError::into_message)
 }

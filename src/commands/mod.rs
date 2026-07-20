@@ -44,6 +44,9 @@ pub(crate) fn validate_package_identity(package: &str, version: &str) -> Result<
 }
 
 /// Run a parsed `cista` command and return any diagnostics to the caller.
+///
+/// # Errors
+/// Returns the error from whichever sub-command was dispatched.
 pub fn run(cli: CistaCli) -> CommandResult {
     match cli.command {
         CistaCommand::Init(args) => init::run(args),

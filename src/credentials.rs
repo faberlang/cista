@@ -19,12 +19,21 @@ struct Credential {
     token: String,
 }
 
+/// Return the default `~/.faber/credentials.toml` path.
+///
+/// # Errors
+/// Returns an error when the `HOME` environment variable is not set.
 pub fn default_path() -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME")
         .ok_or_else(|| "HOME is unavailable; cannot locate registry credentials".to_owned())?;
     Ok(PathBuf::from(home).join(".faber").join("credentials.toml"))
 }
 
+/// Persist a credential entry for a registry origin.
+///
+/// # Errors
+/// Returns an error when the origin or token fails validation, the credential
+/// file cannot be read, or the write-and-replace sequence fails.
 pub fn store(path: &Path, origin: &str, token: &str) -> Result<(), String> {
     validate(origin, token)?;
     let mut credentials = read(path)?;
@@ -36,6 +45,14 @@ pub fn store(path: &Path, origin: &str, token: &str) -> Result<(), String> {
     write(path, &credentials)
 }
 
+/// Remove the credential entry for a registry origin.
+///
+/// Returns `Ok(true)` when an entry was removed and `Ok(false)` when no
+/// matching entry existed.
+///
+/// # Errors
+/// Returns an error when the origin fails validation, the credential file
+/// cannot be read, or the write-and-replace sequence fails.
 pub fn remove(path: &Path, origin: &str) -> Result<bool, String> {
     validate_origin(origin)?;
     let mut credentials = read(path)?;
@@ -48,6 +65,11 @@ pub fn remove(path: &Path, origin: &str) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Look up the stored bearer token for a registry origin.
+///
+/// # Errors
+/// Returns an error when the origin fails validation or the credential file
+/// cannot be read.
 pub fn token(path: &Path, origin: &str) -> Result<Option<String>, String> {
     validate_origin(origin)?;
     Ok(read(path)?

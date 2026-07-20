@@ -18,6 +18,10 @@ pub struct InstalledPackage {
 }
 
 /// Resolve store root using explicit path, `CISTAE_HOME`, or default home.
+///
+/// # Errors
+/// Returns an error when neither `CISTAE_HOME` nor `HOME` is set and no
+/// explicit path was supplied.
 pub fn store_root(explicit: Option<&Path>) -> Result<PathBuf, String> {
     if let Some(path) = explicit {
         return Ok(normalize_path(path));
@@ -40,6 +44,10 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 }
 
 /// List installed package versions under a store root.
+///
+/// # Errors
+/// Returns an error when the store directory cannot be read, any entry fails
+/// metadata inspection, or a directory name is not valid UTF-8.
 pub fn list_installed(store_root: &Path) -> Result<Vec<InstalledPackage>, String> {
     let mut packages = Vec::new();
     if !store_root.exists() {
@@ -198,6 +206,11 @@ fn utf8_directory_name(path: &Path, kind: &str) -> Result<String, String> {
 }
 
 /// Resolve `name` or `name@version` in the store.
+///
+/// # Errors
+/// Returns an error when the package is not installed, the version is not
+/// installed, or the identifier matches multiple versions and no version was
+/// specified.
 pub fn find_installed(store_root: &Path, package_id: &str) -> Result<InstalledPackage, String> {
     let (name, version) = split_package_id(package_id);
     let installed = list_installed(store_root)?;
@@ -241,6 +254,10 @@ pub fn find_installed(store_root: &Path, package_id: &str) -> Result<InstalledPa
 }
 
 /// Resolve `name` or `name@version` and validate installed target manifest identity.
+///
+/// # Errors
+/// Returns an error when the package cannot be found in the store or its
+/// installed identity cannot be validated.
 pub fn find_verified_installed(
     store_root: &Path,
     package_id: &str,
@@ -261,6 +278,11 @@ pub fn split_package_id(package_id: &str) -> (String, Option<String>) {
 }
 
 /// Collect files under an installed package root (relative paths).
+///
+/// # Errors
+/// Returns an error when the package root or any entry cannot be inspected, a
+/// symlink is encountered, or the directory layout contains unsupported entry
+/// types.
 pub fn list_package_files(package_root: &Path) -> Result<Vec<PathBuf>, String> {
     if fs::symlink_metadata(package_root)
         .map_err(|err| format!("failed to inspect {}: {err}", package_root.display()))?
@@ -316,6 +338,11 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
 }
 
 /// Read the first available target-level installed `cista.toml` if present.
+///
+/// # Errors
+/// Returns an error when a symlink is encountered, filesystem inspection fails,
+/// the manifest cannot be parsed, or the manifest identity does not match the
+/// installed package.
 pub fn read_any_target_manifest(
     package: &InstalledPackage,
 ) -> Result<Option<(PathBuf, CistaManifest)>, String> {
@@ -377,6 +404,11 @@ fn walk_for_manifest(
 }
 
 /// Validate all installed target manifests discovered for a package.
+///
+/// # Errors
+/// Returns an error when a symlink is encountered, a manifest cannot be read
+/// or parsed, a manifest identity does not match the installed package, or no
+/// identity evidence is found at all.
 pub fn validate_installed_identity(package: &InstalledPackage) -> Result<(), String> {
     let has_root_identity = validate_root_manifest(package)?;
     let has_target_identity = validate_target_manifest_tree(package, &package.targets_dir)?;
@@ -472,6 +504,11 @@ fn validate_target_manifest_tree(package: &InstalledPackage, dir: &Path) -> Resu
     Ok(found_identity)
 }
 
+/// Validate that a `CistaManifest` belongs to the installed package.
+///
+/// # Errors
+/// Returns an error when the manifest `source.package` or `source.version` do
+/// not match the installed package identity.
 pub fn validate_manifest_identity(
     package: &InstalledPackage,
     manifest_path: &Path,
@@ -509,6 +546,10 @@ fn validate_meta_manifest_identity(
 }
 
 /// Resolve a package id or filesystem path for inspect.
+///
+/// # Errors
+/// Returns an error when the path does not exist and the store root cannot be
+/// resolved, or the package id cannot be found and verified in the store.
 pub fn resolve_package_or_path(
     value: &str,
     store: Option<&Path>,

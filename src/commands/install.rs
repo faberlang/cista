@@ -11,6 +11,13 @@ use super::{env, fs, fs_util, registry, rust_target, shared, CommandResult, Path
 /// Packages that are platform defaults: lock rewrite does not require a
 /// matching `faber.toml` `[dependencies]` entry.
 const PLATFORM_DEFAULT_PACKAGES: &[&str] = &["norma"];
+
+/// Install a package into the shared store from a local path or registry.
+///
+/// # Errors
+/// Returns an error when both `--path` and `name@version` are given, neither is
+/// given, the store root cannot be resolved, the meta-package validation fails,
+/// the registry fetch fails, or the package snapshot or lock rewrite fails.
 pub fn run(args: &InstallArgs) -> CommandResult {
     if args.path.is_some() && args.package.is_some() {
         return Err(vec![
