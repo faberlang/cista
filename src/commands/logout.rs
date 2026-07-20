@@ -3,7 +3,7 @@ use crate::credentials;
 
 use super::CommandResult;
 
-pub fn run(args: RegistryOriginArg) -> CommandResult {
+pub fn run(args: &RegistryOriginArg) -> CommandResult {
     let path = credentials::default_path().map_err(|error| vec![error])?;
     if !credentials::remove(&path, &args.registry_url).map_err(|error| vec![error])? {
         return Err(vec![format!(

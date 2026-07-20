@@ -2,7 +2,7 @@ use crate::cli::PackageArg;
 
 use super::{registry, CommandResult};
 
-pub fn run(args: PackageArg) -> CommandResult {
+pub fn run(args: &PackageArg) -> CommandResult {
     let path = if let Some(origin) = &args.registry_url {
         registry::fetch_remote_to_cache(&args.package, origin, args.store.as_deref())
     } else {

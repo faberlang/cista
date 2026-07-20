@@ -2,7 +2,7 @@ use crate::cli::CheckArgs;
 
 use super::{shared, CommandResult};
 
-pub fn run(args: CheckArgs) -> CommandResult {
+pub fn run(args: &CheckArgs) -> CommandResult {
     let checked = shared::validate_package(
         &args.path,
         &args.manifest,

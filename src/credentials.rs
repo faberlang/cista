@@ -144,7 +144,7 @@ fn write_and_replace(path: &Path, temporary: &Path, contents: &[u8]) -> Result<(
     let mut file = secure_create(temporary)?;
     let write_result = file
         .write_all(contents)
-        .and_then(|_| file.sync_all())
+        .and_then(|()| file.sync_all())
         .map_err(|error| {
             format!(
                 "failed to write credentials {}: {error}",
@@ -152,7 +152,7 @@ fn write_and_replace(path: &Path, temporary: &Path, contents: &[u8]) -> Result<(
             )
         });
     drop(file);
-    let result = write_result.and_then(|_| {
+    let result = write_result.and_then(|()| {
         fs::rename(temporary, path).map_err(|error| {
             format!(
                 "failed to replace credentials {} with {}: {error}",

@@ -6,7 +6,7 @@ use crate::{manifest, store};
 
 use super::{rust_target, CommandResult, Path, PathBuf};
 
-pub fn run(args: RunArgs) -> CommandResult {
+pub fn run(args: &RunArgs) -> CommandResult {
     let store_root = store::store_root(args.store.as_deref()).map_err(|err| vec![err])?;
     let package =
         store::find_verified_installed(&store_root, &args.package).map_err(|err| vec![err])?;

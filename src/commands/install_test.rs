@@ -102,7 +102,7 @@ entry = "main.fab"
     )
     .expect("write project manifest");
 
-    run(InstallArgs {
+    run(&InstallArgs {
         path: Some(package.clone()),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -194,7 +194,7 @@ edition = "2021"
     .expect("write cargo manifest");
     fs::write(package.join("rust/src/main.rs"), "fn main() {}\n").expect("write binary source");
 
-    run(InstallArgs {
+    run(&InstallArgs {
         path: Some(package),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -284,7 +284,7 @@ path = "../true"
     )
     .expect("write meta manifest");
 
-    run(InstallArgs {
+    run(&InstallArgs {
         path: Some(meta),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -332,7 +332,7 @@ version = "1.0.0"
     )
     .expect("write registry meta manifest");
 
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: None,
         package: Some("coreutils@1.0.0".to_owned()),
         manifest: PathBuf::from("cista.toml"),
@@ -379,7 +379,7 @@ fn install_by_name_waits_for_store_mutation_lock_before_cache_mutation() {
     let (done_tx, done_rx) = mpsc::channel();
     let install_store = store.clone();
     let handle = thread::spawn(move || {
-        let result = run(InstallArgs {
+        let result = run(&InstallArgs {
             path: None,
             package: Some("example@0.1.0".to_owned()),
             manifest: PathBuf::from("cista.toml"),
@@ -442,7 +442,7 @@ path = "../../outside"
     )
     .expect("write meta manifest");
 
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(meta),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -535,7 +535,7 @@ fn install_rejects_transaction_suffix_versions_before_store_write() {
         let store = root.join("store");
         write_interfaces_only_package_with_version(&package, "example", version);
 
-        let error = run(InstallArgs {
+        let error = run(&InstallArgs {
             path: Some(package),
             package: None,
             manifest: PathBuf::from("cista.toml"),
@@ -568,7 +568,7 @@ fn install_rejects_store_inside_package_source_before_store_write() {
     let store = package.join(".store");
     write_interfaces_only_package(&package, "example");
 
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(package.clone()),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -601,7 +601,7 @@ fn install_rejects_package_source_inside_package_store_root_before_store_write()
     let package = store.join("example/0.1.0/source");
     write_interfaces_only_package(&package, "example");
 
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(package.clone()),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -663,7 +663,7 @@ path = "../dependency"
     )
     .expect("write meta manifest");
 
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(meta.clone()),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -704,7 +704,7 @@ fn install_commit_failure_preserves_existing_snapshot() {
     fs::write(installed.join("targets/rust/old/marker"), "old target\n").expect("write old target");
 
     fs_util::inject_commit_failure(&installed.canonicalize().expect("canonical installed path"));
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(package),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -755,7 +755,7 @@ fn install_finalize_failure_after_backup_disposal_preserves_committed_snapshot()
             .canonicalize()
             .expect("canonical installed package path"),
     );
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(package),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -809,7 +809,7 @@ example = "0.1.0"
     .expect("write project manifest");
     fs::create_dir(project.join(faber_lock::LOCK_FILE)).expect("occupy lock path");
 
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(package),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -859,7 +859,7 @@ example = "0.1.0"
     .expect("write project manifest");
 
     inject_write_and_replace_fault(WriteAndReplaceFault::SyncParent);
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(package),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -928,7 +928,7 @@ path = "../dependency"
         .expect("write old meta snapshot");
 
     fs_util::inject_commit_failure(&installed.canonicalize().expect("canonical installed path"));
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(meta),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -1004,7 +1004,7 @@ path = "../second"
         .canonicalize()
         .expect("canonical second dependency snapshot");
     fs_util::inject_commit_failure(&second_installed_canonical);
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(meta),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -1097,7 +1097,7 @@ path = "../dependency"
             .canonicalize()
             .expect("canonical installed meta path"),
     );
-    let error = run(InstallArgs {
+    let error = run(&InstallArgs {
         path: Some(meta),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -1167,7 +1167,7 @@ incipit {
     )
     .expect("write project source");
 
-    run(InstallArgs {
+    run(&InstallArgs {
         path: Some(norma.clone()),
         package: None,
         manifest: PathBuf::from("cista.toml"),

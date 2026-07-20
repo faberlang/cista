@@ -85,7 +85,7 @@ edition = "2021"
     )
     .expect("write binary source");
 
-    super::super::install::run(InstallArgs {
+    super::super::install::run(&InstallArgs {
         path: Some(package.clone()),
         package: None,
         manifest: PathBuf::from("cista.toml"),
@@ -98,7 +98,7 @@ edition = "2021"
     .expect("install binary");
     fs::remove_dir_all(&package).expect("remove source package");
 
-    run(RunArgs {
+    run(&RunArgs {
         package: "argcheck".to_owned(),
         store: Some(store),
         args: vec!["proof".to_owned()],
@@ -116,7 +116,7 @@ fn run_rejects_installed_manifest_identity_mismatch() {
     let target = store.join("tool/1.2.3/targets/rust").join(&host);
     write_installed_binary_manifest(&target, "other", "9.9.9", &host);
 
-    let error = run(RunArgs {
+    let error = run(&RunArgs {
         package: "tool@1.2.3".to_owned(),
         store: Some(store),
         args: Vec::new(),

@@ -11,7 +11,7 @@ use super::{env, fs, fs_util, registry, rust_target, shared, CommandResult, Path
 /// Packages that are platform defaults: lock rewrite does not require a
 /// matching `faber.toml` `[dependencies]` entry.
 const PLATFORM_DEFAULT_PACKAGES: &[&str] = &["norma"];
-pub fn run(args: InstallArgs) -> CommandResult {
+pub fn run(args: &InstallArgs) -> CommandResult {
     if args.path.is_some() && args.package.is_some() {
         return Err(vec![
             "install accepts either --path or name@version, not both".to_owned(),
@@ -36,8 +36,8 @@ pub fn run(args: InstallArgs) -> CommandResult {
                 registry::fetch_to_cache_locked(package, args.registry.as_deref(), &store_root)
                     .map_err(|err| vec![err])?;
             return install_package_path(
-                &args,
-                package_path,
+                args,
+                &package_path,
                 &store_root,
                 project_root,
                 install_locks,
@@ -46,16 +46,16 @@ pub fn run(args: InstallArgs) -> CommandResult {
         _ => return Err(vec!["install requires --path or name@version".to_owned()]),
     };
 
-    install_package_from_path(&args, package_path, &store_root, project_root)
+    install_package_from_path(args, &package_path, &store_root, project_root)
 }
 
 fn install_package_from_path(
     args: &InstallArgs,
-    package_path: PathBuf,
+    package_path: &Path,
     store_root: &Path,
     project_root: Option<PathBuf>,
 ) -> CommandResult {
-    let package_root = shared::normalize_path(&package_path);
+    let package_root = shared::normalize_path(package_path);
     let manifest_path = shared::package_manifest_path(&package_root, &args.manifest)
         .map_err(|error| vec![error])?;
     if let Some(meta) = manifest::read_meta_manifest(&manifest_path).map_err(|err| vec![err])? {
@@ -71,7 +71,7 @@ fn install_package_from_path(
         return result;
     }
     let checked = shared::validate_package(
-        &package_path,
+        package_path,
         &args.manifest,
         Some(&args.target_language),
         args.verify_target_build,
@@ -81,18 +81,18 @@ fn install_package_from_path(
         .map_err(|err| vec![err])?;
     let install_locks = shared::acquire_store_mutation_locks(store_root, project_root.as_deref())
         .map_err(|error| vec![error])?;
-    install_checked_package_with_locks(checked, store_root, project_root, install_locks)
+    install_checked_package_with_locks(&checked, store_root, project_root, install_locks)
 }
 
 fn install_package_path(
     args: &InstallArgs,
-    package_path: PathBuf,
+    package_path: &Path,
     store_root: &Path,
     project_root: Option<PathBuf>,
     install_locks: shared::StoreMutationLocks,
 ) -> CommandResult {
     let checked = shared::validate_package(
-        &package_path,
+        package_path,
         &args.manifest,
         Some(&args.target_language),
         args.verify_target_build,
@@ -100,19 +100,19 @@ fn install_package_path(
     let package_store_root = shared::package_store_root(store_root, &checked.manifest);
     verify_install_store_disjoint(&checked.package_root, store_root, &package_store_root)
         .map_err(|err| vec![err])?;
-    install_checked_package_with_locks(checked, store_root, project_root, install_locks)
+    install_checked_package_with_locks(&checked, store_root, project_root, install_locks)
 }
 
 fn install_checked_package_with_locks(
-    checked: shared::CheckedPackage,
+    checked: &shared::CheckedPackage,
     store_root: &Path,
     project_root: Option<PathBuf>,
     install_locks: shared::StoreMutationLocks,
 ) -> CommandResult {
-    let mut installed = install_checked_package_transaction(&checked, store_root)?;
+    let mut installed = install_checked_package_transaction(checked, store_root)?;
 
     if let Some(project_root) = project_root {
-        if let Err(error) = rewrite_project_lock(&project_root, &checked, &installed.paths) {
+        if let Err(error) = rewrite_project_lock(&project_root, checked, &installed.paths) {
             if error.lock_committed {
                 let mut errors = error.messages;
                 if let Err(finalize_error) = installed.replacement.finalize() {
@@ -663,7 +663,7 @@ fn rewrite_project_lock(
         .crate_name
         .as_deref()
         .unwrap_or(package);
-    let record = locked_from_install(InstalledLockInput {
+    let record = locked_from_install(&InstalledLockInput {
         name: package,
         version,
         source_path: &checked.package_root,

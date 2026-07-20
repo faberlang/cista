@@ -4,7 +4,7 @@ use crate::store;
 use super::{fs, shared, CommandResult};
 use std::io::ErrorKind;
 
-pub fn run(args: PackageArg) -> CommandResult {
+pub fn run(args: &PackageArg) -> CommandResult {
     let store_root = store::store_root(args.store.as_deref()).map_err(|err| vec![err])?;
     let mutation_locks =
         shared::acquire_store_mutation_locks(&store_root, None).map_err(|error| vec![error])?;

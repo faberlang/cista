@@ -11,6 +11,7 @@ pub struct PackageRequest {
 
 impl PackageRequest {
     /// Create a package request.
+    #[must_use]
     pub fn new(package: PackageId) -> Self {
         Self { package }
     }

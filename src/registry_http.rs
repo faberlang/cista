@@ -111,7 +111,7 @@ impl RegistryHttpClient {
 
     /// Fetch an immutable package archive by exact package identity.
     pub fn fetch_package(&self, name: &str, version: &str) -> Result<Vec<u8>, String> {
-        self.execute(Method::Get, package_path(name, version)?, Vec::new())
+        self.execute(Method::Get, &package_path(name, version)?, Vec::new())
     }
 
     /// Publish an immutable package archive by exact package identity.
@@ -121,11 +121,11 @@ impl RegistryHttpClient {
         version: &str,
         archive: Vec<u8>,
     ) -> Result<(), String> {
-        self.execute(Method::Put, package_path(name, version)?, archive)?;
+        self.execute(Method::Put, &package_path(name, version)?, archive)?;
         Ok(())
     }
 
-    fn execute(&self, method: Method, path: String, body: Vec<u8>) -> Result<Vec<u8>, String> {
+    fn execute(&self, method: Method, path: &str, body: Vec<u8>) -> Result<Vec<u8>, String> {
         self.transport.execute(Request {
             method,
             url: format!("{}{}", self.base_url, path),

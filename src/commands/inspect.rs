@@ -4,7 +4,7 @@ use crate::store::{self, ResolvedInspectTarget};
 
 use super::CommandResult;
 
-pub fn run(args: PackageOrPathArg) -> CommandResult {
+pub fn run(args: &PackageOrPathArg) -> CommandResult {
     let target = store::resolve_package_or_path(&args.value, args.store.as_deref())
         .map_err(|err| vec![err])?;
     match target {

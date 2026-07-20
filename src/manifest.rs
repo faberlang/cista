@@ -69,6 +69,7 @@ pub enum PackageRole {
 
 impl PackageRole {
     /// Manifest spelling for this package role.
+    #[must_use]
     pub const fn kebab_name(self) -> &'static str {
         match self {
             Self::Lib => "lib",
@@ -92,6 +93,7 @@ pub enum SourceKind {
 
 impl SourceKind {
     /// Manifest spelling for this source kind.
+    #[must_use]
     pub const fn kebab_name(self) -> &'static str {
         match self {
             Self::Source => "source",
@@ -125,6 +127,7 @@ pub enum TargetMode {
 
 impl TargetMode {
     /// Manifest spelling for this target mode.
+    #[must_use]
     pub const fn kebab_name(self) -> &'static str {
         match self {
             Self::Compile => "compile",
@@ -142,6 +145,7 @@ pub enum BindingPolicy {
 
 impl BindingPolicy {
     /// Manifest spelling for this binding policy.
+    #[must_use]
     pub const fn kebab_name(self) -> &'static str {
         match self {
             Self::Generated => "generated",
@@ -173,6 +177,7 @@ pub struct Binding {
 }
 
 /// Resolve the manifest path inside a package root.
+#[must_use]
 pub fn manifest_path(package_root: &Path, manifest_name: Option<&Path>) -> PathBuf {
     package_root.join(manifest_name.unwrap_or_else(|| Path::new(MANIFEST_FILE)))
 }

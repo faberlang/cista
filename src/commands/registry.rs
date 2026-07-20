@@ -185,26 +185,23 @@ pub(super) fn fetch_to_cache_locked(
             registry.display()
         ));
     }
-    match manifest::read_meta_manifest(&source_manifest)? {
-        Some(meta) => {
-            if meta.source.package != name || meta.source.version != version {
-                return Err(format!(
-                    "registry package `{name}@{version}` declares `{}@{}`",
-                    meta.source.package, meta.source.version
-                ));
-            }
-            validate_cached_meta_package(&meta)?;
+    if let Some(meta) = manifest::read_meta_manifest(&source_manifest)? {
+        if meta.source.package != name || meta.source.version != version {
+            return Err(format!(
+                "registry package `{name}@{version}` declares `{}@{}`",
+                meta.source.package, meta.source.version
+            ));
         }
-        None => {
-            let manifest = manifest::read_manifest(&source_manifest)?;
-            if manifest.source.package != name || manifest.source.version != version {
-                return Err(format!(
-                    "registry package `{name}@{version}` declares `{}@{}`",
-                    manifest.source.package, manifest.source.version
-                ));
-            }
-            validate_cached_package(&source)?;
+        validate_cached_meta_package(&meta)?;
+    } else {
+        let manifest = manifest::read_manifest(&source_manifest)?;
+        if manifest.source.package != name || manifest.source.version != version {
+            return Err(format!(
+                "registry package `{name}@{version}` declares `{}@{}`",
+                manifest.source.package, manifest.source.version
+            ));
         }
+        validate_cached_package(&source)?;
     }
     let destination = store_root
         .join(".cache")

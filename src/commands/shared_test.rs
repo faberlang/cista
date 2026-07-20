@@ -266,9 +266,8 @@ fn package_manifest_paths_must_be_relative_and_contained() {
     )
     .expect("write malicious manifest");
 
-    let diagnostics = match validate_package(&package, Path::new("cista.toml"), None, false) {
-        Ok(_) => panic!("absolute package paths must be rejected"),
-        Err(diagnostics) => diagnostics,
+    let Err(diagnostics) = validate_package(&package, Path::new("cista.toml"), None, false) else {
+        panic!("absolute package paths must be rejected")
     };
     for field in [
         "source.interfaces",
@@ -312,9 +311,8 @@ fn package_manifest_paths_must_resolve_symlinks_inside_package_root() {
     )
     .expect("write symlink manifest");
 
-    let diagnostics = match validate_package(&package, Path::new("cista.toml"), None, false) {
-        Ok(_) => panic!("escaping symlink must be rejected"),
-        Err(diagnostics) => diagnostics,
+    let Err(diagnostics) = validate_package(&package, Path::new("cista.toml"), None, false) else {
+        panic!("escaping symlink must be rejected")
     };
     assert!(
         diagnostics
@@ -345,9 +343,8 @@ fn validate_package_with_verify_build_rejects_non_rust_language() {
     .expect("write manifest");
 
     let result = validate_package(&package, Path::new("cista.toml"), None, true);
-    let diagnostics = match result {
-        Err(diags) => diags,
-        Ok(_) => panic!("non-rust language must fail with verify_build=true"),
+    let Err(diagnostics) = result else {
+        panic!("non-rust language must fail with verify_build=true")
     };
     assert!(diagnostics
         .iter()
@@ -372,9 +369,8 @@ fn validate_package_with_verify_build_skips_cargo_for_interfaces_only() {
     .expect("write manifest");
 
     let result = validate_package(&package, Path::new("cista.toml"), None, true);
-    let diagnostics = match result {
-        Err(diags) => diags,
-        Ok(_) => panic!("interfaces-only must fail with verify_build=true"),
+    let Err(diagnostics) = result else {
+        panic!("interfaces-only must fail with verify_build=true")
     };
     assert!(diagnostics.iter().any(|d| d.contains("nothing to check")));
     fs::remove_dir_all(root).expect("cleanup");

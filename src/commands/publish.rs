@@ -2,7 +2,7 @@ use crate::cli::PublishArgs;
 
 use super::{registry, CommandResult};
 
-pub fn run(args: PublishArgs) -> CommandResult {
+pub fn run(args: &PublishArgs) -> CommandResult {
     if let Some(origin) = &args.registry_url {
         registry::publish_remote(&args.path, &args.manifest, origin).map_err(|err| vec![err])?;
         println!("published: {origin}");

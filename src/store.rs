@@ -34,6 +34,7 @@ pub fn store_root(explicit: Option<&Path>) -> Result<PathBuf, String> {
 }
 
 /// Normalize a path, canonicalizing when possible.
+#[must_use]
 pub fn normalize_path(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
@@ -250,6 +251,7 @@ pub fn find_verified_installed(
 }
 
 /// Parse `name` or `name@version`.
+#[must_use]
 pub fn split_package_id(package_id: &str) -> (String, Option<String>) {
     if let Some((name, version)) = package_id.split_once('@') {
         (name.to_owned(), Some(version.to_owned()))
@@ -341,7 +343,7 @@ fn walk_for_manifest(
         .map_err(|err| format!("failed to read {}: {err}", dir.display()))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| format!("failed to read entry under {}: {err}", dir.display()))?;
-    entries.sort_by_key(|entry| entry.file_name());
+    entries.sort_by_key(std::fs::DirEntry::file_name);
 
     for entry in entries {
         let path = entry.path();

@@ -74,7 +74,7 @@ fn remove_does_not_delete_reserved_cache_namespace() {
     fs::create_dir_all(&cached).expect("create registry cache entry");
     fs::write(cached.join("archive"), "cached package").expect("write registry cache payload");
 
-    let error = run(PackageArg {
+    let error = run(&PackageArg {
         package: ".cache@registry".to_owned(),
         store: Some(store.clone()),
         registry: None,
@@ -104,7 +104,7 @@ fn remove_rejects_installed_identity_mismatch_without_deleting_package() {
         "9.9.9",
     );
 
-    let error = run(PackageArg {
+    let error = run(&PackageArg {
         package: "tool@1.2.3".to_owned(),
         store: Some(store),
         registry: None,
@@ -130,7 +130,7 @@ fn remove_rejects_missing_installed_identity_without_deleting_package() {
     fs::create_dir_all(package.join("interfaces")).expect("create package interfaces");
     fs::write(package.join("payload"), "installed payload").expect("write package payload");
 
-    let error = run(PackageArg {
+    let error = run(&PackageArg {
         package: "tool@1.2.3".to_owned(),
         store: Some(store),
         registry: None,
@@ -188,7 +188,7 @@ fn remove_waits_for_store_mutation_lock() {
     let (done_tx, done_rx) = mpsc::channel();
     let remove_store = store.clone();
     let handle = std::thread::spawn(move || {
-        let result = run(PackageArg {
+        let result = run(&PackageArg {
             package: "tool@1.2.3".to_owned(),
             store: Some(remove_store),
             registry: None,

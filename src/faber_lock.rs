@@ -141,7 +141,7 @@ fn temporary_lock_path(path: &Path) -> PathBuf {
     let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let file_name = path
         .file_name()
-        .map_or_else(|| LOCK_FILE.into(), |name| name.to_os_string());
+        .map_or_else(|| LOCK_FILE.into(), std::ffi::OsStr::to_os_string);
     let mut temporary_name = file_name;
     temporary_name.push(format!(".{}.{}.tmp", std::process::id(), sequence));
     path.with_file_name(temporary_name)
@@ -281,6 +281,7 @@ pub fn upsert_package(lock: &mut FaberLock, package: LockedPackage) {
 }
 
 /// Absolute path helper for lock records.
+#[must_use]
 pub fn absolute_display(path: &Path) -> String {
     path.canonicalize()
         .unwrap_or_else(|_| path.to_path_buf())
@@ -308,7 +309,8 @@ pub struct InstalledLockInput<'a> {
     pub has_artifact: bool,
 }
 
-pub fn locked_from_install(input: InstalledLockInput<'_>) -> LockedPackage {
+#[must_use]
+pub fn locked_from_install(input: &InstalledLockInput<'_>) -> LockedPackage {
     let package_root = absolute_display(input.package_store_root);
     let target_dir = input
         .package_store_root
@@ -337,6 +339,7 @@ pub fn locked_from_install(input: InstalledLockInput<'_>) -> LockedPackage {
 }
 
 /// Resolve lock path inside a project root.
+#[must_use]
 pub fn lock_path(project_root: &Path) -> PathBuf {
     project_root.join(LOCK_FILE)
 }

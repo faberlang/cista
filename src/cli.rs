@@ -147,7 +147,7 @@ pub enum PackageSubcommand {
 /// Optional store root argument.
 #[derive(Args, Debug)]
 pub struct StoreArg {
-    /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
+    /// Shared cista package artifact store; falls back to `CISTAE_HOME`, then ~/.faber/cistae
     #[arg(long)]
     pub store: Option<PathBuf>,
 }
@@ -237,11 +237,11 @@ pub struct InstallArgs {
     #[arg(long)]
     pub target_language: String,
 
-    /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
+    /// Shared cista package artifact store; falls back to `CISTAE_HOME`, then ~/.faber/cistae
     #[arg(long)]
     pub store: Option<PathBuf>,
 
-    /// Local/dev registry root; falls back to CISTA_REGISTRY
+    /// Local/dev registry root; falls back to `CISTA_REGISTRY`
     #[arg(long)]
     pub registry: Option<PathBuf>,
 
@@ -265,7 +265,7 @@ pub struct PublishArgs {
     #[arg(long, default_value = "cista.toml")]
     pub manifest: PathBuf,
 
-    /// Local/dev registry root; falls back to CISTA_REGISTRY
+    /// Local/dev registry root; falls back to `CISTA_REGISTRY`
     #[arg(long)]
     pub registry: Option<PathBuf>,
 
@@ -280,7 +280,7 @@ pub struct RunArgs {
     /// Installed package identifier (`name` or `name@version`)
     pub package: String,
 
-    /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
+    /// Shared cista package artifact store; falls back to `CISTAE_HOME`, then ~/.faber/cistae
     #[arg(long)]
     pub store: Option<PathBuf>,
 
@@ -295,11 +295,11 @@ pub struct PackageArg {
     /// Package identifier (`name` or `name@version`)
     pub package: String,
 
-    /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
+    /// Shared cista package artifact store; falls back to `CISTAE_HOME`, then ~/.faber/cistae
     #[arg(long)]
     pub store: Option<PathBuf>,
 
-    /// Local/dev registry root; falls back to CISTA_REGISTRY
+    /// Local/dev registry root; falls back to `CISTA_REGISTRY`
     #[arg(long)]
     pub registry: Option<PathBuf>,
 
@@ -321,7 +321,7 @@ pub struct PackageOrPathArg {
     /// Package identifier or filesystem path
     pub value: String,
 
-    /// Shared cista package artifact store; falls back to CISTAE_HOME, then ~/.faber/cistae
+    /// Shared cista package artifact store; falls back to `CISTAE_HOME`, then ~/.faber/cistae
     #[arg(long)]
     pub store: Option<PathBuf>,
 }

@@ -192,7 +192,7 @@ fn server_error_is_surfaced() {
 }
 
 /// A transport that returns an oversized response, simulating
-/// a response exceeding MAX_RESPONSE_BYTES.
+/// a response exceeding `MAX_RESPONSE_BYTES`.
 struct OversizedResponseTransport;
 
 impl Transport for OversizedResponseTransport {

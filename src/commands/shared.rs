@@ -160,14 +160,14 @@ pub(super) fn validate_package(
         );
     }
 
-    if !diagnostics.is_empty() {
-        Err(diagnostics)
-    } else {
+    if diagnostics.is_empty() {
         Ok(CheckedPackage {
             package_root,
             manifest,
             paths,
         })
+    } else {
+        Err(diagnostics)
     }
 }
 

@@ -50,7 +50,11 @@ fn temporary_lock_files(directory: &Path) -> Vec<PathBuf> {
         .filter_map(|entry| {
             let path = entry.expect("read lock directory entry").path();
             let name = path.file_name()?.to_str()?;
-            (name.starts_with("faber.lock.") && name.ends_with(".tmp")).then_some(path)
+            (name.starts_with("faber.lock.")
+                && std::path::Path::new(name)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("tmp")))
+            .then_some(path)
         })
         .collect()
 }
