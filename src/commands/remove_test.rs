@@ -233,12 +233,10 @@ fn remove_empty_name_dir_handles_read_dir_failure() {
     fs::set_permissions(&name_dir, fs::Permissions::from_mode(0o000))
         .expect("remove read permissions");
 
-    let error = remove_empty_name_dir(&name_dir)
-        .expect_err("unreadable directory must fail");
+    let error = remove_empty_name_dir(&name_dir).expect_err("unreadable directory must fail");
     assert!(error.contains("failed to inspect package directory"));
 
     // Restore permissions for cleanup.
-    fs::set_permissions(&name_dir, fs::Permissions::from_mode(0o755))
-        .expect("restore permissions");
+    fs::set_permissions(&name_dir, fs::Permissions::from_mode(0o755)).expect("restore permissions");
     fs::remove_dir_all(root).expect("remove fixture");
 }

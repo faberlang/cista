@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
-use crate::manifest::{Binding, PackageRole, SourceSection, TargetSection, TargetMode, SourceKind, BindingPolicy};
+use crate::manifest::{
+    Binding, BindingPolicy, PackageRole, SourceKind, SourceSection, TargetMode, TargetSection,
+};
 use std::fs;
 
 fn temp_root(name: &str) -> PathBuf {
@@ -374,9 +376,7 @@ fn validate_package_with_verify_build_skips_cargo_for_interfaces_only() {
         Err(diags) => diags,
         Ok(_) => panic!("interfaces-only must fail with verify_build=true"),
     };
-    assert!(diagnostics
-        .iter()
-        .any(|d| d.contains("nothing to check")));
+    assert!(diagnostics.iter().any(|d| d.contains("nothing to check")));
     fs::remove_dir_all(root).expect("cleanup");
 }
 
@@ -428,9 +428,8 @@ fn resolve_meta_dependency_rejects_absolute_path() {
     let root = temp_root("meta-absolute-path");
     fs::create_dir_all(&root).expect("create meta root");
 
-    let error =
-        resolve_meta_dependency_path(&root, "dependency", Path::new("/etc/passwd"))
-            .expect_err("absolute path must be rejected");
+    let error = resolve_meta_dependency_path(&root, "dependency", Path::new("/etc/passwd"))
+        .expect_err("absolute path must be rejected");
     assert!(error.contains("must be relative"));
     fs::remove_dir_all(root).expect("cleanup");
 }
@@ -459,12 +458,8 @@ fn resolve_meta_dependency_rejects_traversal_beyond_collection() {
     fs::create_dir_all(&meta_root).expect("create meta root");
     fs::create_dir_all(&outside).expect("create outside dir");
 
-    let error = resolve_meta_dependency_path(
-        &meta_root,
-        "dependency",
-        Path::new("../../outside"),
-    )
-    .expect_err("traversal beyond collection must be rejected");
+    let error = resolve_meta_dependency_path(&meta_root, "dependency", Path::new("../../outside"))
+        .expect_err("traversal beyond collection must be rejected");
     assert!(error.contains("resolves outside package collection"));
     fs::remove_dir_all(root).expect("cleanup");
 }
@@ -485,8 +480,12 @@ fn validate_interfaces_detects_missing_interface_directory() {
     });
 
     let mut diagnostics = Vec::new();
-    let symbols =
-        validate_interfaces(&package, &package.join("interfaces"), &manifest, &mut diagnostics);
+    let symbols = validate_interfaces(
+        &package,
+        &package.join("interfaces"),
+        &manifest,
+        &mut diagnostics,
+    );
     assert!(
         diagnostics
             .iter()

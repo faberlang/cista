@@ -137,13 +137,9 @@ fn login_accepts_custom_registry_url() {
 
 #[test]
 fn login_accepts_custom_token_env() {
-    assert!(CistaCli::try_parse_from([
-        "cista",
-        "login",
-        "--token-env",
-        "MY_REGISTRY_TOKEN",
-    ])
-    .is_ok());
+    assert!(
+        CistaCli::try_parse_from(["cista", "login", "--token-env", "MY_REGISTRY_TOKEN",]).is_ok()
+    );
 }
 
 // --- LogoutArgs ---
@@ -234,7 +230,9 @@ fn run_accepts_version_pin() {
 #[test]
 fn package_list_accepts_store_arg() {
     assert!(CistaCli::try_parse_from(["cista", "package", "list"]).is_ok());
-    assert!(CistaCli::try_parse_from(["cista", "package", "list", "--store", "/tmp/store"]).is_ok());
+    assert!(
+        CistaCli::try_parse_from(["cista", "package", "list", "--store", "/tmp/store"]).is_ok()
+    );
 }
 
 #[test]

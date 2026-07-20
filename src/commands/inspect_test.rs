@@ -62,11 +62,8 @@ edition = "2021"
 #[test]
 fn inspect_path_rejects_invalid_manifest() {
     let root = temp_dir("invalid-manifest");
-    fs::write(
-        root.join("cista.toml"),
-        "this is not valid TOML {{{",
-    )
-    .expect("write invalid manifest");
+    fs::write(root.join("cista.toml"), "this is not valid TOML {{{")
+        .expect("write invalid manifest");
 
     let error = inspect_path(&root).expect_err("invalid manifest must be rejected");
     assert!(error.iter().any(|d| d.contains("failed to parse manifest")));

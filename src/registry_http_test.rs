@@ -249,12 +249,9 @@ fn garbage_body_returns_data_not_archive() {
     // The transport layer does not validate the archive format — it returns
     // whatever bytes were stored. The caller (fetch_remote_to_cache) extracts
     // the archive later via unpack_archive.
-    let client = RegistryHttpClient::with_transport(
-        "https://cista.dev",
-        Some("secret"),
-        Box::new(registry),
-    )
-    .expect("client should construct");
+    let client =
+        RegistryHttpClient::with_transport("https://cista.dev", Some("secret"), Box::new(registry))
+            .expect("client should construct");
     let bytes = client
         .fetch_package("tool", "1.2.3")
         .expect("garbage body should still be returned as bytes");

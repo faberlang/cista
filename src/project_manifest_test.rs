@@ -30,7 +30,10 @@ fn require_exact_dependency_succeeds_on_match() {
     };
 
     let result = require_exact_dependency(&manifest, "norma", "0.1.0");
-    assert!(result.is_ok(), "matching version should succeed: {result:?}");
+    assert!(
+        result.is_ok(),
+        "matching version should succeed: {result:?}"
+    );
 }
 
 #[test]
@@ -91,7 +94,10 @@ norma = "0.1.0"
 
     let manifest = read_project_manifest(&path).expect("valid strict manifest must parse");
     assert_eq!(manifest.package.name, "demo");
-    assert_eq!(manifest.dependencies.get("norma"), Some(&"0.1.0".to_owned()));
+    assert_eq!(
+        manifest.dependencies.get("norma"),
+        Some(&"0.1.0".to_owned())
+    );
     fs::remove_dir_all(path.parent().unwrap()).expect("cleanup");
 }
 
@@ -115,7 +121,10 @@ norma = "0.1.0"
     let manifest = read_project_manifest(&path)
         .expect("manifest with unknown top-level keys should fall back to loose parse");
     assert_eq!(manifest.package.name, "demo");
-    assert_eq!(manifest.dependencies.get("norma"), Some(&"0.1.0".to_owned()));
+    assert_eq!(
+        manifest.dependencies.get("norma"),
+        Some(&"0.1.0".to_owned())
+    );
     fs::remove_dir_all(path.parent().unwrap()).expect("cleanup");
 }
 
@@ -131,8 +140,7 @@ norma = "0.1.0"
     )
     .expect("write manifest");
 
-    let error = read_project_manifest(&path)
-        .expect_err("missing [package] must be rejected");
+    let error = read_project_manifest(&path).expect_err("missing [package] must be rejected");
     assert!(error.contains("missing [package]"));
     fs::remove_dir_all(path.parent().unwrap()).expect("cleanup");
 }
@@ -152,8 +160,7 @@ norma = "0.1.0"
     )
     .expect("write manifest");
 
-    let error = read_project_manifest(&path)
-        .expect_err("missing package.name must be rejected");
+    let error = read_project_manifest(&path).expect_err("missing package.name must be rejected");
     assert!(error.contains("package.name is required"));
     fs::remove_dir_all(path.parent().unwrap()).expect("cleanup");
 }

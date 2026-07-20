@@ -61,7 +61,9 @@ fn verify_target_build_rejects_non_rust_language() {
     let mut diagnostics = Vec::new();
     verify_target_build(&manifest, None, &mut diagnostics);
 
-    assert!(diagnostics.iter().any(|d| d.contains("only implemented for target.language")));
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.contains("only implemented for target.language")));
 }
 
 #[test]
@@ -72,7 +74,9 @@ fn verify_target_build_rejects_non_compile_mode() {
     let mut diagnostics = Vec::new();
     verify_target_build(&manifest, None, &mut diagnostics);
 
-    assert!(diagnostics.iter().any(|d| d.contains("requires target.mode")));
+    assert!(diagnostics
+        .iter()
+        .any(|d| d.contains("requires target.mode")));
 }
 
 #[test]
@@ -94,11 +98,7 @@ fn verify_target_build_skips_cargo_when_no_cargo_toml() {
     let manifest = compile_manifest(Some("target"));
 
     let mut diagnostics = Vec::new();
-    verify_target_build(
-        &manifest,
-        Some(&target_source),
-        &mut diagnostics,
-    );
+    verify_target_build(&manifest, Some(&target_source), &mut diagnostics);
 
     assert!(
         diagnostics.is_empty(),
@@ -113,8 +113,11 @@ fn verify_target_build_skips_cargo_when_no_cargo_toml() {
 fn run_cargo_rejects_empty_args() {
     let root = temp_dir("run-cargo-empty");
     let cargo_toml = root.join("Cargo.toml");
-    fs::write(&cargo_toml, "[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
-        .expect("write Cargo.toml");
+    fs::write(
+        &cargo_toml,
+        "[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
 
     let error = run_cargo(&cargo_toml, &[], "test").expect_err("empty args must be rejected");
     assert!(error.contains("cargo_args must include a subcommand"));
@@ -128,7 +131,8 @@ fn contained_cargo_manifest_returns_none_when_cargo_toml_is_missing() {
     let root = temp_dir("missing-cargo");
     fs::create_dir_all(&root).expect("create dir");
 
-    let result = contained_cargo_manifest(&root).expect("missing Cargo.toml should return Ok(None)");
+    let result =
+        contained_cargo_manifest(&root).expect("missing Cargo.toml should return Ok(None)");
     assert!(result.is_none());
     fs::remove_dir_all(root).expect("cleanup");
 }
@@ -138,13 +142,17 @@ fn contained_cargo_manifest_resolves_valid_cargo_toml() {
     let root = temp_dir("valid-cargo");
     fs::create_dir_all(&root).expect("create dir");
     let cargo_toml = root.join("Cargo.toml");
-    fs::write(&cargo_toml, "[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
-        .expect("write Cargo.toml");
+    fs::write(
+        &cargo_toml,
+        "[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
 
     // Canonicalize the root so that starts_with checks work correctly
     // when /tmp or /var is a symlink (e.g., /var -> /private/var on macOS).
     let canonical_root = root.canonicalize().expect("canonicalize root");
-    let result = contained_cargo_manifest(&canonical_root).expect("valid Cargo.toml should resolve");
+    let result =
+        contained_cargo_manifest(&canonical_root).expect("valid Cargo.toml should resolve");
     assert!(result.is_some());
     let resolved = result.unwrap();
     assert!(resolved.ends_with("Cargo.toml"));
@@ -159,16 +167,19 @@ fn contained_cargo_manifest_rejects_cargo_toml_outside_target_source() {
     fs::create_dir_all(&target_source).expect("create target dir");
     fs::create_dir_all(&outside).expect("create outside dir");
     let outside_cargo = outside.join("Cargo.toml");
-    fs::write(&outside_cargo, "[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
-        .expect("write Cargo.toml");
+    fs::write(
+        &outside_cargo,
+        "[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
 
     // Create a symlink from target/Cargo.toml -> ../outside/Cargo.toml
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(&outside_cargo, target_source.join("Cargo.toml"))
             .expect("create symlink");
-        let error =
-            contained_cargo_manifest(&target_source).expect_err("escaping Cargo.toml must be rejected");
+        let error = contained_cargo_manifest(&target_source)
+            .expect_err("escaping Cargo.toml must be rejected");
         assert!(error.contains("resolves outside target.source"));
     }
     fs::remove_dir_all(root).expect("cleanup");
@@ -183,8 +194,8 @@ fn build_rust_artifact_rejects_missing_cargo_toml() {
     fs::create_dir_all(&target_source).expect("create target dir");
 
     let manifest = compile_manifest(Some("target"));
-    let error =
-        build_rust_artifact(&target_source, &manifest).expect_err("missing Cargo.toml must be rejected");
+    let error = build_rust_artifact(&target_source, &manifest)
+        .expect_err("missing Cargo.toml must be rejected");
     assert!(error.contains("missing Cargo.toml"));
     fs::remove_dir_all(root).expect("cleanup");
 }

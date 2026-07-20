@@ -101,10 +101,7 @@ fn read_manifest_rejects_unknown_fields() {
     let path = root.join("cista.toml");
     write_manifest(
         &path,
-        &format!(
-            "{}\nunknown_field = true\n",
-            valid_compile_toml()
-        ),
+        &format!("{}\nunknown_field = true\n", valid_compile_toml()),
     );
 
     let error = read_manifest(&path).expect_err("unknown fields must be rejected");
