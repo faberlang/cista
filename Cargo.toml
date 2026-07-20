@@ -14,6 +14,9 @@ path = "src/lib.rs"
 name = "cista"
 path = "src/bin/cista.rs"
 
+[lints.clippy]
+pedantic = "deny"
+
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 fs2 = "0.4"

@@ -141,6 +141,9 @@ fn install_checked_package_with_locks(
     Ok(())
 }
 
+// Meta install walks dependencies, store paths, and lock rewrite in one
+// procedure; splitting is deferred (real design), not a pedantic style pass.
+#[allow(clippy::too_many_lines)]
 fn install_meta_package(
     args: &InstallArgs,
     package_root: &Path,
