@@ -332,3 +332,139 @@ pub fn scrub_rust_source(source: &str) -> String {
 
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_substring_counts_occurrences() {
+        assert_eq!(count_substring("hello world hello", "hello"), 2);
+        assert_eq!(count_substring("no match here", "xyz"), 0);
+        assert_eq!(count_substring("", "a"), 0);
+        assert_eq!(count_substring("aaa", "aa"), 2); // overlapping
+    }
+
+    #[test]
+    fn count_expect_without_subtract() {
+        let src = "x.expect(\"a\"); self.expect(\"b\");";
+        assert_eq!(count_expect(src, false), 2);
+    }
+
+    #[test]
+    fn count_expect_subtracts_self_expect() {
+        let src = "x.expect(\"a\"); self.expect(\"b\");";
+        assert_eq!(count_expect(src, true), 1);
+    }
+
+    #[test]
+    fn count_expect_empty() {
+        assert_eq!(count_expect("", false), 0);
+        assert_eq!(count_expect("no dot expect here", false), 0);
+    }
+
+    #[test]
+    fn count_let_underscore_counts_lines() {
+        let src = "let _ = foo();\nbar();\nlet _ = baz();";
+        assert_eq!(count_let_underscore(src), 2);
+    }
+
+    #[test]
+    fn count_let_underscore_ignores_inline_occurrences() {
+        // Only counts one per line even if multiple `let _ =` appear on same line.
+        assert_eq!(count_let_underscore("let _ = a(); let _ = b();"), 1);
+    }
+
+    #[test]
+    fn count_let_underscore_empty() {
+        assert_eq!(count_let_underscore(""), 0);
+    }
+
+    #[test]
+    fn assert_budget_does_not_panic_on_match() {
+        assert_budget(".unwrap()", 0, 0); // exactly at budget
+        assert_budget(".unwrap()", 1, 5); // within budget
+    }
+
+    #[test]
+    #[should_panic(expected = "budget exceeded")]
+    fn assert_budget_panics_when_exceeded() {
+        assert_budget("test", 3, 1);
+    }
+
+    #[test]
+    fn is_test_support_path_matches_exact_names() {
+        assert!(is_test_support_path(Path::new("src/test_support.rs")));
+        assert!(is_test_support_path(Path::new("test_support.rs")));
+        assert!(is_test_support_path(Path::new("src/test_support/mod.rs")));
+    }
+
+    #[test]
+    fn is_test_support_path_rejects_other_paths() {
+        assert!(!is_test_support_path(Path::new("src/lib.rs")));
+        assert!(!is_test_support_path(Path::new("")));
+    }
+
+    #[test]
+    fn companion_test_path_generates_expected_name() {
+        assert_eq!(
+            companion_test_path(Path::new("src/lib.rs")),
+            Some(PathBuf::from("src/lib_test.rs"))
+        );
+        assert_eq!(
+            companion_test_path(Path::new("foo/bar/baz.rs")),
+            Some(PathBuf::from("foo/bar/baz_test.rs"))
+        );
+    }
+
+    #[test]
+    fn companion_test_path_returns_none_without_stem() {
+        assert_eq!(companion_test_path(Path::new("")), None);
+    }
+
+    #[test]
+    fn scrub_rust_source_preserves_code_characters() {
+        let src = "fn foo() -> i32 { 42 }";
+        assert_eq!(scrub_rust_source(src), src);
+    }
+
+    #[test]
+    fn scrub_rust_source_replaces_line_comments_with_spaces() {
+        let src = "abc // comment\nxyz";
+        let expected = "abc           \nxyz";
+        assert_eq!(scrub_rust_source(src), expected);
+    }
+
+    #[test]
+    fn scrub_rust_source_replaces_block_comments_with_spaces() {
+        let src = "abc /* inner */ xyz";
+        let expected = "abc             xyz";
+        assert_eq!(scrub_rust_source(src), expected);
+    }
+
+    #[test]
+    fn scrub_rust_source_replaces_string_literals_with_spaces() {
+        let src = "x = \"hello\";";
+        let expected = "x =        ;";
+        assert_eq!(scrub_rust_source(src), expected);
+    }
+
+    #[test]
+    fn scrub_rust_source_replaces_char_literals_with_spaces() {
+        let src = "let ch = 'x';";
+        let expected = "let ch =   ;";
+        assert_eq!(scrub_rust_source(src), expected);
+    }
+
+    #[test]
+    fn scrub_rust_source_preserves_lifetimes() {
+        let src = "fn foo<'a>(x: &'a str) -> &'a str";
+        let expected = "fn foo   (x: &  str) -> &  str";
+        assert_eq!(scrub_rust_source(src), expected);
+    }
+
+    #[test]
+    fn scrub_rust_source_handles_empty_input() {
+        assert_eq!(scrub_rust_source(""), "");
+    }
+}

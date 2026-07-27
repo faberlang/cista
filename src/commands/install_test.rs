@@ -528,37 +528,87 @@ binding_policy = "generated"
 }
 
 #[test]
-fn install_rejects_transaction_suffix_versions_before_store_write() {
-    for version in ["1.0.0.incoming-123-1", "1.0.0.replaced-123-2"] {
-        let root = temp_root("transaction-version");
-        let package = root.join("package");
-        let store = root.join("store");
-        write_interfaces_only_package_with_version(&package, "example", version);
+fn install_rejects_nonexistent_package_path() {
+    let root = tempfile::tempdir().expect("create temp root");
+    let store = root.path().join("store");
+    let missing = root.path().join("nonexistent-package");
 
-        let error = run(&InstallArgs {
-            path: Some(package),
-            package: None,
-            manifest: PathBuf::from("cista.toml"),
-            target_language: "rust".to_owned(),
-            store: Some(store.clone()),
-            registry: None,
-            project: None,
-            verify_target_build: false,
-        })
-        .expect_err("transaction-like source.version must fail validation");
+    let error = run(&InstallArgs {
+        path: Some(missing),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("nonexistent package path must fail");
 
-        assert!(
-            error.iter().any(|message| message
-                .contains("collides with Cista install transaction directory namespace")),
-            "missing transaction namespace diagnostic for {version}: {error:?}"
-        );
-        assert!(
-            !store.join("example").exists(),
-            "rejected install must not write a package namespace for {version}"
-        );
+    assert!(
+        error.iter().any(|m| m.contains("No such file") || m.contains("not found")),
+        "missing nonexistent path diagnostic: {error:?}"
+    );
+}
 
-        fs::remove_dir_all(root).expect("cleanup temp root");
-    }
+#[test]
+fn install_rejects_transaction_suffix_incoming_version_before_store_write() {
+    let root = tempfile::tempdir().expect("create temp root");
+    let package = root.path().join("package");
+    let store = root.path().join("store");
+    write_interfaces_only_package_with_version(&package, "example", "1.0.0.incoming-123-1");
+
+    let error = run(&InstallArgs {
+        path: Some(package),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("incoming transaction version must fail validation");
+
+    assert!(
+        error.iter().any(|message| message
+            .contains("collides with Cista install transaction directory namespace")),
+        "missing incoming namespace diagnostic: {error:?}"
+    );
+    assert!(
+        !store.join("example").exists(),
+        "rejected install must not write a package namespace for incoming version"
+    );
+}
+
+#[test]
+fn install_rejects_transaction_suffix_replaced_version_before_store_write() {
+    let root = tempfile::tempdir().expect("create temp root");
+    let package = root.path().join("package");
+    let store = root.path().join("store");
+    write_interfaces_only_package_with_version(&package, "example", "1.0.0.replaced-123-2");
+
+    let error = run(&InstallArgs {
+        path: Some(package),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: None,
+        verify_target_build: false,
+    })
+    .expect_err("replaced transaction version must fail validation");
+
+    assert!(
+        error.iter().any(|message| message
+            .contains("collides with Cista install transaction directory namespace")),
+        "missing replaced namespace diagnostic: {error:?}"
+    );
+    assert!(
+        !store.join("example").exists(),
+        "rejected install must not write a package namespace for replaced version"
+    );
 }
 
 #[test]

@@ -202,3 +202,42 @@ norma = { version = "0.1.0" }
         Some(&"0.1.0".to_owned())
     );
 }
+
+#[test]
+fn require_exact_dependency_rejects_empty_dependency_name() {
+    let manifest = ProjectManifest {
+        package: ProjectPackage {
+            name: "demo".to_owned(),
+            version: Some("0.1.0".to_owned()),
+            edition: None,
+        },
+        dependencies: [("norma".to_owned(), "0.1.0".to_owned())].into(),
+        paths: None,
+        build: None,
+        reader: None,
+    };
+
+    let error = require_exact_dependency(&manifest, "", "0.1.0")
+        .expect_err("empty dependency name must be rejected");
+    assert!(error.contains("not declared"));
+}
+
+#[test]
+fn require_exact_dependency_rejects_empty_declared_version() {
+    let manifest = ProjectManifest {
+        package: ProjectPackage {
+            name: "demo".to_owned(),
+            version: Some("0.1.0".to_owned()),
+            edition: None,
+        },
+        dependencies: [("emptyver".to_owned(), "".to_owned())].into(),
+        paths: None,
+        build: None,
+        reader: None,
+    };
+
+    let error = require_exact_dependency(&manifest, "emptyver", "0.1.0")
+        .expect_err("empty declared version must be rejected");
+    assert!(error.contains("declares"));
+    assert!(error.contains("\"\""));
+}

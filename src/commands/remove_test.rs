@@ -240,3 +240,26 @@ fn remove_empty_name_dir_handles_read_dir_failure() {
     fs::set_permissions(&name_dir, fs::Permissions::from_mode(0o755)).expect("restore permissions");
     fs::remove_dir_all(root).expect("remove fixture");
 }
+
+#[test]
+fn remove_empty_name_dir_rejects_non_existent_path() {
+    let root = fixture("non-existent");
+    let name_dir = root.join("does-not-exist");
+
+    let error = remove_empty_name_dir(&name_dir)
+        .expect_err("non-existent directory must be rejected");
+    assert!(error.contains("failed to inspect package directory"));
+}
+
+#[test]
+fn remove_empty_name_dir_rejects_file_path() {
+    let root = fixture("file-path");
+    let name_dir = root.join("not-a-dir");
+    fs::create_dir_all(&root).expect("create parent dir");
+    fs::write(&name_dir, "file content").expect("write file");
+
+    let error = remove_empty_name_dir(&name_dir).expect_err("file path must be rejected");
+    assert!(error.contains("failed to inspect package directory"));
+
+    fs::remove_dir_all(root).expect("remove fixture");
+}

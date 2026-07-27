@@ -131,3 +131,31 @@ fn package_copy_rejects_preexisting_staging_directory() {
     );
     fs::remove_dir_all(root).expect("remove fixture");
 }
+
+#[test]
+fn package_copy_handles_empty_source() {
+    let root = tempfile::tempdir().expect("create temp root");
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(&source).expect("create empty source");
+
+    copy_dir_clean(&source, &destination).expect("copy empty source should succeed");
+
+    assert!(destination.is_dir(), "destination must exist after empty copy");
+    assert!(
+        destination.read_dir().expect("read destination").next().is_none(),
+        "destination must be empty"
+    );
+}
+
+#[test]
+fn package_copy_rejects_same_path_for_source_and_destination() {
+    let root = tempfile::tempdir().expect("create temp root");
+    let source = root.path().join("samedir");
+    fs::create_dir_all(&source).expect("create source");
+
+    let error = copy_dir_clean(&source, &source)
+        .expect_err("same path for source and destination must be rejected");
+
+    assert!(error.contains("must not overlap"));
+}

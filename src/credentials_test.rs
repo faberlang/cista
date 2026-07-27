@@ -139,3 +139,23 @@ fn store_creates_parent_directory() {
     fs::remove_file(&path).unwrap();
     fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn token_rejects_invalid_origin() {
+    let path = temp_path();
+
+    let error = token(&path, "http://insecure.dev")
+        .expect_err("token with plain HTTP origin must be rejected");
+    assert!(error.contains("bare HTTPS origin"));
+    assert!(!path.exists());
+}
+
+#[test]
+fn remove_rejects_invalid_origin() {
+    let path = temp_path();
+
+    let error = remove(&path, "https://user@cista.dev/path")
+        .expect_err("remove with invalid origin must be rejected");
+    assert!(error.contains("bare HTTPS origin"));
+    assert!(!path.exists());
+}

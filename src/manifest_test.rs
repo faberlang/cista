@@ -209,6 +209,26 @@ unknown = true
 }
 
 #[test]
+fn read_manifest_rejects_missing_file() {
+    let root = temp_dir("read-missing");
+    let path = root.join("does-not-exist.toml");
+
+    let error = read_manifest(&path).expect_err("missing file must be rejected");
+    assert!(error.contains("failed to read manifest"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn read_meta_manifest_rejects_missing_file() {
+    let root = temp_dir("meta-missing");
+    let path = root.join("does-not-exist.toml");
+
+    let error = read_meta_manifest(&path).expect_err("missing file must be rejected");
+    assert!(error.contains("failed to read manifest"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
 fn read_meta_manifest_parses_meta_with_dependencies() {
     let root = temp_dir("meta-deps");
     let path = root.join("cista.toml");

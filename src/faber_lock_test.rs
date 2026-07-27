@@ -1,13 +1,4 @@
 use super::*;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn temporary_directory() -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is before Unix epoch")
-        .as_nanos();
-    std::env::temp_dir().join(format!("cista-faber-lock-{}-{nonce}", std::process::id()))
-}
 
 fn package(name: &str, version: &str) -> LockedPackage {
     LockedPackage {
@@ -68,9 +59,8 @@ fn assert_existing_lock_is_preserved(path: &Path, existing: &LockedPackage) {
 
 #[test]
 fn write_lock_replaces_existing_file_with_stable_ordering() {
-    let directory = temporary_directory();
-    let path = directory.join(LOCK_FILE);
-    fs::create_dir_all(&directory).expect("create test directory");
+    let directory = tempfile::tempdir().expect("create test directory");
+    let path = directory.path().join(LOCK_FILE);
     fs::write(&path, "invalid previous contents").expect("seed previous lock");
 
     let lock = FaberLock {
@@ -90,20 +80,17 @@ fn write_lock_replaces_existing_file_with_stable_ordering() {
         2
     );
     assert_eq!(
-        fs::read_dir(&directory)
+        fs::read_dir(directory.path())
             .expect("list test directory")
             .count(),
         1
     );
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }
 
 #[test]
 fn write_lock_create_failure_preserves_existing_lock_without_temp_file() {
-    let directory = temporary_directory();
-    let path = directory.join(LOCK_FILE);
-    fs::create_dir_all(&directory).expect("create test directory");
+    let directory = tempfile::tempdir().expect("create test directory");
+    let path = directory.path().join(LOCK_FILE);
     let existing = seed_existing_lock(&path);
 
     inject_write_and_replace_fault(WriteAndReplaceFault::BeforeCreate);
@@ -116,18 +103,15 @@ fn write_lock_create_failure_preserves_existing_lock_without_temp_file() {
     );
     assert_existing_lock_is_preserved(&path, &existing);
     assert!(
-        temporary_lock_files(&directory).is_empty(),
+        temporary_lock_files(directory.path()).is_empty(),
         "create failure must not leave a temporary lock file"
     );
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }
 
 #[test]
 fn write_lock_write_failure_preserves_existing_lock_and_removes_temp_file() {
-    let directory = temporary_directory();
-    let path = directory.join(LOCK_FILE);
-    fs::create_dir_all(&directory).expect("create test directory");
+    let directory = tempfile::tempdir().expect("create test directory");
+    let path = directory.path().join(LOCK_FILE);
     let existing = seed_existing_lock(&path);
 
     inject_write_and_replace_fault(WriteAndReplaceFault::Write);
@@ -137,18 +121,15 @@ fn write_lock_write_failure_preserves_existing_lock_and_removes_temp_file() {
     assert!(error.contains("injected failure while writing"), "{error}");
     assert_existing_lock_is_preserved(&path, &existing);
     assert!(
-        temporary_lock_files(&directory).is_empty(),
+        temporary_lock_files(directory.path()).is_empty(),
         "write failure must remove the temporary lock file"
     );
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }
 
 #[test]
 fn write_lock_rename_failure_preserves_existing_lock_and_removes_temp_file() {
-    let directory = temporary_directory();
-    let path = directory.join(LOCK_FILE);
-    fs::create_dir_all(&directory).expect("create test directory");
+    let directory = tempfile::tempdir().expect("create test directory");
+    let path = directory.path().join(LOCK_FILE);
     let existing = seed_existing_lock(&path);
 
     inject_write_and_replace_fault(WriteAndReplaceFault::Rename);
@@ -161,18 +142,15 @@ fn write_lock_rename_failure_preserves_existing_lock_and_removes_temp_file() {
     );
     assert_existing_lock_is_preserved(&path, &existing);
     assert!(
-        temporary_lock_files(&directory).is_empty(),
+        temporary_lock_files(directory.path()).is_empty(),
         "rename failure must remove the temporary lock file"
     );
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }
 
 #[test]
 fn write_lock_cleanup_failure_preserves_existing_lock_and_surfaces_cleanup_error() {
-    let directory = temporary_directory();
-    let path = directory.join(LOCK_FILE);
-    fs::create_dir_all(&directory).expect("create test directory");
+    let directory = tempfile::tempdir().expect("create test directory");
+    let path = directory.path().join(LOCK_FILE);
     let existing = seed_existing_lock(&path);
 
     inject_write_and_replace_faults(vec![
@@ -190,19 +168,16 @@ fn write_lock_cleanup_failure_preserves_existing_lock_and_surfaces_cleanup_error
     );
     assert_existing_lock_is_preserved(&path, &existing);
     assert_eq!(
-        temporary_lock_files(&directory).len(),
+        temporary_lock_files(directory.path()).len(),
         1,
         "cleanup failure should leave the temporary lock file for diagnostics"
     );
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }
 
 #[test]
 fn write_lock_parent_sync_failure_reports_committed_lock_risk() {
-    let directory = temporary_directory();
-    let path = directory.join(LOCK_FILE);
-    fs::create_dir_all(&directory).expect("create test directory");
+    let directory = tempfile::tempdir().expect("create test directory");
+    let path = directory.path().join(LOCK_FILE);
     seed_existing_lock(&path);
 
     inject_write_and_replace_fault(WriteAndReplaceFault::SyncParent);
@@ -219,11 +194,9 @@ fn write_lock_parent_sync_failure_reports_committed_lock_risk() {
         "rename has committed before parent directory sync failure is reported"
     );
     assert!(
-        temporary_lock_files(&directory).is_empty(),
+        temporary_lock_files(directory.path()).is_empty(),
         "committed replacement must not leave a temporary lock file"
     );
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }
 
 #[test]
@@ -265,4 +238,38 @@ fn upsert_package_removes_duplicate_matching_names() {
             package("beta", "1.0.0")
         ]
     );
+}
+
+#[test]
+fn read_lock_returns_default_for_missing_file() {
+    let directory = tempfile::tempdir().expect("create test directory");
+    let path = directory.path().join(LOCK_FILE);
+
+    let lock = read_lock(&path).expect("missing lock file should return default");
+    assert!(lock.packages.is_empty());
+}
+
+#[test]
+fn read_lock_rejects_malformed_file() {
+    let directory = tempfile::tempdir().expect("create test directory");
+    let path = directory.path().join(LOCK_FILE);
+    fs::write(&path, "this is not valid toml {{{").expect("write malformed lock");
+
+    let error = read_lock(&path).expect_err("malformed lock must be rejected");
+    assert!(error.contains("invalid"));
+}
+
+#[test]
+fn write_lock_creates_parent_directory() {
+    let directory = tempfile::tempdir().expect("create test directory");
+    let nested = directory.path().join("subdir").join("nested");
+    let path = nested.join(LOCK_FILE);
+
+    let lock = FaberLock {
+        packages: vec![package("alpha", "1.0.0")],
+    };
+    write_lock(&path, &lock).expect("write_lock must create parent directory");
+
+    let written = read_lock(&path).expect("read back written lock");
+    assert_eq!(written.packages.len(), 1);
 }

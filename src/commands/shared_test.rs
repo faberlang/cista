@@ -188,19 +188,23 @@ fn manifest_shape_requires_bindings_for_manifest_policy() {
 }
 
 #[test]
-fn source_version_must_not_collide_with_transaction_directory_suffixes() {
+fn source_version_transaction_rejected_by_manifest_validation() {
     for version in ["1.0.0.incoming-123-1", "1.0.0.replaced-123-2"] {
         let mut manifest = buildable_manifest();
         manifest.source.version = version.to_owned();
         let mut diagnostics = Vec::new();
-
         validate_manifest_shape(&manifest, &mut diagnostics);
-
         assert!(
             diagnostics.iter().any(|diagnostic| diagnostic
                 .contains("collides with Cista install transaction directory namespace")),
             "missing transaction namespace diagnostic for {version}: {diagnostics:?}"
         );
+    }
+}
+
+#[test]
+fn source_version_transaction_rejected_by_identity_validation() {
+    for version in ["1.0.0.incoming-123-1", "1.0.0.replaced-123-2"] {
         let identity_error = validate_identity("example", version)
             .expect_err("identity validation must reject transaction-like versions");
         assert!(
@@ -212,38 +216,51 @@ fn source_version_must_not_collide_with_transaction_directory_suffixes() {
 }
 
 #[test]
-fn source_identity_segments_must_not_contain_at_signs() {
-    for (field, package, version) in [
-        ("source.package", "foo@bar", "1.0.0"),
-        ("source.version", "foo", "1.0@0"),
-    ] {
-        let invalid_value = if field == "source.package" {
-            package
-        } else {
-            version
-        };
-        let expected =
-            format!("{field} `{invalid_value}` is not a valid package store path segment");
-        let mut manifest = buildable_manifest();
-        manifest.source.package = package.to_owned();
-        manifest.source.version = version.to_owned();
-        let mut diagnostics = Vec::new();
+fn source_package_at_sign_rejected_by_manifest_and_identity() {
+    let package = "foo@bar";
+    let version = "1.0.0";
+    let expected =
+        "source.package `foo@bar` is not a valid package store path segment";
+    let mut manifest = buildable_manifest();
+    manifest.source.package = package.to_owned();
+    let mut diagnostics = Vec::new();
+    validate_manifest_shape(&manifest, &mut diagnostics);
+    assert!(
+        diagnostics.iter().any(|diagnostic| diagnostic == &expected),
+        "missing @ diagnostic for source.package: {diagnostics:?}"
+    );
+    let identity_error = validate_identity(package, version)
+        .expect_err("identity validation must reject @ in source.package");
+    assert!(
+        identity_error
+            .iter()
+            .any(|diagnostic| diagnostic == &expected),
+        "missing @ identity diagnostic for source.package: {identity_error:?}"
+    );
+}
 
-        validate_manifest_shape(&manifest, &mut diagnostics);
-
-        assert!(
-            diagnostics.iter().any(|diagnostic| diagnostic == &expected),
-            "missing @ diagnostic for {field}: {diagnostics:?}"
-        );
-        let identity_error = validate_identity(package, version)
-            .expect_err("identity validation must reject @ in package identity segments");
-        assert!(
-            identity_error
-                .iter()
-                .any(|diagnostic| diagnostic == &expected),
-            "missing @ identity diagnostic for {field}: {identity_error:?}"
-        );
-    }
+#[test]
+fn source_version_at_sign_rejected_by_manifest_and_identity() {
+    let package = "foo";
+    let version = "1.0@0";
+    let expected =
+        "source.version `1.0@0` is not a valid package store path segment";
+    let mut manifest = buildable_manifest();
+    manifest.source.version = version.to_owned();
+    let mut diagnostics = Vec::new();
+    validate_manifest_shape(&manifest, &mut diagnostics);
+    assert!(
+        diagnostics.iter().any(|diagnostic| diagnostic == &expected),
+        "missing @ diagnostic for source.version: {diagnostics:?}"
+    );
+    let identity_error = validate_identity(package, version)
+        .expect_err("identity validation must reject @ in source.version");
+    assert!(
+        identity_error
+            .iter()
+            .any(|diagnostic| diagnostic == &expected),
+        "missing @ identity diagnostic for source.version: {identity_error:?}"
+    );
 }
 
 #[test]
@@ -617,4 +634,25 @@ fn validate_bindings_reports_missing_symbol() {
             .any(|d| d.contains("not found in module")),
         "missing symbol should produce diagnostic: {diagnostics:?}"
     );
+}
+
+#[test]
+fn validate_identity_rejects_empty_package() {
+    let error = validate_identity("", "1.0.0")
+        .expect_err("empty package must be rejected");
+    assert!(error.iter().any(|d| d.contains("must not be empty")), "{error:?}");
+}
+
+#[test]
+fn validate_identity_rejects_empty_version() {
+    let error = validate_identity("tool", "")
+        .expect_err("empty version must be rejected");
+    assert!(error.iter().any(|d| d.contains("must not be empty")), "{error:?}");
+}
+
+#[test]
+fn validate_identity_rejects_empty_package_and_version() {
+    let error = validate_identity("", "")
+        .expect_err("empty package and version must be rejected");
+    assert!(error.iter().any(|d| d.contains("must not be empty")), "{error:?}");
 }

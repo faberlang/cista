@@ -163,3 +163,34 @@ fn executable_path_rejects_library_packages() {
         .expect_err("library should not be runnable");
     assert!(error.contains("role `lib`"));
 }
+
+#[test]
+fn executable_path_rejects_non_rust_host() {
+    let manifest = manifest::CistaManifest {
+        source: manifest::SourceSection {
+            package: "py-tool".to_owned(),
+            version: "0.1.0".to_owned(),
+            faber_min: "0.38.0".to_owned(),
+            kind: manifest::SourceKind::Artifact,
+            role: PackageRole::Bin,
+            interfaces: PathBuf::from("interfaces"),
+            sources: None,
+        },
+        target: manifest::TargetSection {
+            language: "python".to_owned(),
+            mode: manifest::TargetMode::Artifact,
+            binding_policy: manifest::BindingPolicy::Generated,
+            source: None,
+            artifact: Some(PathBuf::from("tool")),
+            crate_name: Some("py-tool".to_owned()),
+            triple: Some("host".to_owned()),
+            rustc: None,
+            flags: None,
+            compile: None,
+        },
+        bindings: Vec::new(),
+    };
+    let error = executable_path(&manifest, Path::new("target"), "host")
+        .expect_err("non-Rust language must be rejected");
+    assert!(error.contains("target metadata does not match Rust host"));
+}

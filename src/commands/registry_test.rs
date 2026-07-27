@@ -197,6 +197,42 @@ fn registry_exact_identity_rejects_at_sign_inside_segments() {
 }
 
 #[test]
+fn registry_exact_identity_rejects_empty_string() {
+    let error = exact_identity("")
+        .expect_err("empty identity must be rejected");
+    assert!(
+        error.contains("must use an exact name@version pin"),
+        "{error}"
+    );
+}
+
+#[test]
+fn registry_exact_identity_rejects_missing_version() {
+    let error = exact_identity("tool")
+        .expect_err("identity without version must be rejected");
+    assert!(error.contains("version"), "{error}");
+}
+
+#[test]
+fn registry_exact_identity_rejects_missing_package() {
+    let error = exact_identity("@1.0.0")
+        .expect_err("identity without package must be rejected");
+    assert!(error.contains("package"), "{error}");
+}
+
+#[test]
+fn registry_archive_directory_rejects_nonexistent_path() {
+    let root = tempfile::tempdir().expect("create temp root");
+    let missing = root.path().join("nonexistent-archive");
+    let error = archive_directory(&missing)
+        .expect_err("archiving a nonexistent path must fail");
+    assert!(
+        error.contains("No such file or directory") || error.contains("not found"),
+        "{error}"
+    );
+}
+
+#[test]
 fn invalid_remote_archive_preserves_cached_package() {
     let root = temp_root().join("invalid-remote-archive");
     let source = root.join("source");
@@ -554,9 +590,23 @@ edition = "2021"
         fetch_to_cache("tool@1.2.3", Some(&registry), Some(&store)).expect("fetch exact package");
     assert!(fetched.join("cista.toml").is_file());
     assert!(fetched.join("rust/src/main.rs").is_file());
-    assert!(publish(&fetched, Path::new("cista.toml"), Some(&registry)).is_err());
-    assert!(fetch_to_cache("tool", Some(&registry), Some(&store)).is_err());
-    assert!(fetch_to_cache("../tool@1.2.3", Some(&registry), Some(&store)).is_err());
+
+    // Hold references for sad-path tests.
+    let registry_path = registry;
+    let store_path = store;
+    let fetched_path = fetched;
+    assert!(
+        publish(&fetched_path, Path::new("cista.toml"), Some(&registry_path)).is_err(),
+        "publishing the fetched snapshot again must be rejected as immutable"
+    );
+    assert!(
+        fetch_to_cache("tool", Some(&registry_path), Some(&store_path)).is_err(),
+        "unversioned fetch must be rejected"
+    );
+    assert!(
+        fetch_to_cache("../tool@1.2.3", Some(&registry_path), Some(&store_path)).is_err(),
+        "path-traversal fetch must be rejected"
+    );
 
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
