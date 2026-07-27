@@ -38,7 +38,7 @@ faberlang/
 
 ```bash
 cargo build --release
-./target/release/cista --help
+cargo run --release -- --help
 ```
 
 ## Status

@@ -230,7 +230,7 @@ fn require_exact_dependency_rejects_empty_declared_version() {
             version: Some("0.1.0".to_owned()),
             edition: None,
         },
-        dependencies: [("emptyver".to_owned(), "".to_owned())].into(),
+        dependencies: [("emptyver".to_owned(), String::new())].into(),
         paths: None,
         build: None,
         reader: None,

@@ -546,7 +546,9 @@ fn install_rejects_nonexistent_package_path() {
     .expect_err("nonexistent package path must fail");
 
     assert!(
-        error.iter().any(|m| m.contains("No such file") || m.contains("not found")),
+        error
+            .iter()
+            .any(|m| m.contains("No such file") || m.contains("not found")),
         "missing nonexistent path diagnostic: {error:?}"
     );
 }

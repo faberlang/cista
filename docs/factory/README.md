@@ -42,7 +42,7 @@ cista/
 
 ```bash
 cargo build --release
-./target/release/cista --help
+cargo run --release -- --help
 ```
 
 Each `goal.md` owns its **Status** line.

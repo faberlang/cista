@@ -73,8 +73,7 @@ fn inspect_path_rejects_invalid_manifest() {
 #[test]
 fn inspect_path_rejects_empty_manifest() {
     let root = temp_dir("empty-manifest");
-    fs::write(root.join("cista.toml"), "")
-        .expect("write empty manifest");
+    fs::write(root.join("cista.toml"), "").expect("write empty manifest");
 
     let error = inspect_path(&root).expect_err("empty manifest must be rejected");
     assert!(error.iter().any(|d| d.contains("failed to parse manifest")));
@@ -84,8 +83,7 @@ fn inspect_path_rejects_empty_manifest() {
 #[test]
 fn inspect_path_rejects_whitespace_only_manifest() {
     let root = temp_dir("whitespace-manifest");
-    fs::write(root.join("cista.toml"), "\n  \t  \n")
-        .expect("write whitespace-only manifest");
+    fs::write(root.join("cista.toml"), "\n  \t  \n").expect("write whitespace-only manifest");
 
     let error = inspect_path(&root).expect_err("whitespace-only manifest must be rejected");
     assert!(error.iter().any(|d| d.contains("failed to parse manifest")));

@@ -66,9 +66,18 @@ fn interface_files_are_identified_by_path_components() {
 
 #[test]
 fn is_interface_file_rejects_edge_paths() {
-    assert!(!is_interface_file(Path::new("")), "empty path must be rejected");
-    assert!(!is_interface_file(Path::new("interfaces")), "bare interfaces dir must be rejected");
-    assert!(!is_interface_file(Path::new("interfaces/")), "trailing slash alone must be rejected");
+    assert!(
+        !is_interface_file(Path::new("")),
+        "empty path must be rejected"
+    );
+    assert!(
+        !is_interface_file(Path::new("interfaces")),
+        "bare interfaces dir must be rejected"
+    );
+    assert!(
+        !is_interface_file(Path::new("interfaces/")),
+        "trailing slash alone must be rejected"
+    );
     assert!(
         !is_interface_file(Path::new("/interfaces/foo.fab")),
         "absolute path must be rejected"

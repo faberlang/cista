@@ -141,9 +141,16 @@ fn package_copy_handles_empty_source() {
 
     copy_dir_clean(&source, &destination).expect("copy empty source should succeed");
 
-    assert!(destination.is_dir(), "destination must exist after empty copy");
     assert!(
-        destination.read_dir().expect("read destination").next().is_none(),
+        destination.is_dir(),
+        "destination must exist after empty copy"
+    );
+    assert!(
+        destination
+            .read_dir()
+            .expect("read destination")
+            .next()
+            .is_none(),
         "destination must be empty"
     );
 }

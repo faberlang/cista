@@ -246,8 +246,8 @@ fn remove_empty_name_dir_rejects_non_existent_path() {
     let root = fixture("non-existent");
     let name_dir = root.join("does-not-exist");
 
-    let error = remove_empty_name_dir(&name_dir)
-        .expect_err("non-existent directory must be rejected");
+    let error =
+        remove_empty_name_dir(&name_dir).expect_err("non-existent directory must be rejected");
     assert!(error.contains("failed to inspect package directory"));
 }
 

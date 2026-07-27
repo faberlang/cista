@@ -198,8 +198,7 @@ fn registry_exact_identity_rejects_at_sign_inside_segments() {
 
 #[test]
 fn registry_exact_identity_rejects_empty_string() {
-    let error = exact_identity("")
-        .expect_err("empty identity must be rejected");
+    let error = exact_identity("").expect_err("empty identity must be rejected");
     assert!(
         error.contains("must use an exact name@version pin"),
         "{error}"
@@ -208,15 +207,13 @@ fn registry_exact_identity_rejects_empty_string() {
 
 #[test]
 fn registry_exact_identity_rejects_missing_version() {
-    let error = exact_identity("tool")
-        .expect_err("identity without version must be rejected");
+    let error = exact_identity("tool").expect_err("identity without version must be rejected");
     assert!(error.contains("version"), "{error}");
 }
 
 #[test]
 fn registry_exact_identity_rejects_missing_package() {
-    let error = exact_identity("@1.0.0")
-        .expect_err("identity without package must be rejected");
+    let error = exact_identity("@1.0.0").expect_err("identity without package must be rejected");
     assert!(error.contains("package"), "{error}");
 }
 
@@ -224,8 +221,7 @@ fn registry_exact_identity_rejects_missing_package() {
 fn registry_archive_directory_rejects_nonexistent_path() {
     let root = tempfile::tempdir().expect("create temp root");
     let missing = root.path().join("nonexistent-archive");
-    let error = archive_directory(&missing)
-        .expect_err("archiving a nonexistent path must fail");
+    let error = archive_directory(&missing).expect_err("archiving a nonexistent path must fail");
     assert!(
         error.contains("No such file or directory") || error.contains("not found"),
         "{error}"
