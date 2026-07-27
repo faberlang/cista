@@ -70,12 +70,19 @@ pub(super) fn build_rust_artifact(
         ),
         PackageRole::Bin => (vec!["build", "--bin", crate_name], crate_name.to_owned()),
     };
-    run_cargo(&cargo_toml, &cargo_args, "cargo build")?;
+    // Force a package-local target dir. Nested cargo inherits the parent
+    // process CARGO_TARGET_DIR / workspace config (shared cache under
+    // ~/.cache/faberlang-target), which would place artifacts outside
+    // target_source/target/debug where cista expects them.
+    let package_target_dir = target_source.join("target");
+    run_cargo_with_target_dir(
+        &cargo_toml,
+        &cargo_args,
+        "cargo build",
+        Some(package_target_dir.as_path()),
+    )?;
 
-    let artifact = target_source
-        .join("target")
-        .join("debug")
-        .join(artifact_name);
+    let artifact = package_target_dir.join("debug").join(artifact_name);
     if !artifact.is_file() {
         return Err(format!(
             "cargo build succeeded but expected rust artifact is missing: {}",
@@ -106,6 +113,15 @@ fn contained_cargo_manifest(target_source: &Path) -> Result<Option<PathBuf>, Str
 }
 
 pub(super) fn run_cargo(cargo_toml: &Path, cargo_args: &[&str], label: &str) -> Result<(), String> {
+    run_cargo_with_target_dir(cargo_toml, cargo_args, label, None)
+}
+
+fn run_cargo_with_target_dir(
+    cargo_toml: &Path,
+    cargo_args: &[&str],
+    label: &str,
+    target_dir: Option<&Path>,
+) -> Result<(), String> {
     // Subcommand first, then --manifest-path (cargo rejects global --manifest-path
     // before the subcommand on modern toolchains).
     let mut command = Command::new("cargo");
@@ -114,6 +130,11 @@ pub(super) fn run_cargo(cargo_toml: &Path, cargo_args: &[&str], label: &str) -> 
         .ok_or_else(|| format!("{label}: cargo_args must include a subcommand"))?;
     command.arg(head);
     command.arg("--manifest-path").arg(cargo_toml);
+    if let Some(target_dir) = target_dir {
+        command.arg("--target-dir").arg(target_dir);
+        // Belt-and-suspenders: parent cargo test may export CARGO_TARGET_DIR.
+        command.env("CARGO_TARGET_DIR", target_dir);
+    }
     for arg in rest {
         command.arg(arg);
     }
