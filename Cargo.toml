@@ -3,6 +3,14 @@ name = "cista"
 version = "0.1.0"
 edition = "2021"
 description = "Faber package-store and runtime binding library and CLI"
+
+[profile.dev]
+debug = 1
+codegen-units = 256
+
+[profile.test]
+debug = 1
+codegen-units = 256
 license = "MIT"
 readme = "README.md"
 
