@@ -475,7 +475,12 @@ fn ensure_rust_source_install(manifest: &CistaManifest) -> CommandResult {
 
 fn install_interfaces(interface_source: &Path, package_store_root: &Path) -> Result<(), String> {
     let interface_destination = package_store_root.join("interfaces");
-    fs_util::copy_dir_clean(interface_source, &interface_destination)
+    // Publishable interface surface is `*.fab` only. Colocated test sources
+    // (`*.proba`) live beside product modules in the checkout but must not be
+    // snapshotted into the package store.
+    fs_util::copy_dir_clean_filtered(interface_source, &interface_destination, |path| {
+        path.extension().and_then(|ext| ext.to_str()) == Some("fab")
+    })
 }
 
 /// Snapshot a pure-Faber package: interfaces already copied; write thin target metadata.

@@ -88,6 +88,12 @@ crate = "norma"
         "functio nomen(textus via) → textus { redde via }\n",
     )
     .expect("write nested interface");
+    // Test-only colocated proba must not ship as publishable interface surface.
+    fs::write(
+        package.join("src/solum.proba"),
+        "probandum \"solum\" { proba \"ok\" { adfirma 1 ≡ 1 } }\n",
+    )
+    .expect("write colocated proba");
     fs::write(
         project.join(PROJECT_MANIFEST),
         r#"[package]
@@ -117,6 +123,10 @@ entry = "main.fab"
     let installed_root = store.join("norma/0.1.0");
     assert!(installed_root.join("interfaces/solum.fab").is_file());
     assert!(installed_root.join("interfaces/solum/path.fab").is_file());
+    assert!(
+        !installed_root.join("interfaces/solum.proba").exists(),
+        "install must not publish *.proba as interfaces"
+    );
 
     let lock = read_lock(&project.join(faber_lock::LOCK_FILE)).expect("read lock");
     let norma = lock

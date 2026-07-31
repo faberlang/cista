@@ -117,7 +117,7 @@ fn package_copy_rejects_preexisting_staging_directory() {
     fs::create_dir_all(&staging).expect("occupy staging directory");
     fs::write(staging.join("foreign.txt"), "foreign").expect("write foreign staging file");
 
-    let error = copy_dir_clean_with_sequence(&source, &destination, 42)
+    let error = copy_dir_clean_with_sequence(&source, &destination, 42, None)
         .expect_err("occupied staging directory should fail closed");
 
     assert!(error.contains("failed to reserve replacement directory"));

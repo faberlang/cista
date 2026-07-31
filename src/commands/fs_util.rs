@@ -16,17 +16,31 @@ thread_local! {
 pub(super) fn copy_dir_clean(source: &Path, destination: &Path) -> Result<(), String> {
     verify_disjoint_directories(source, destination)?;
     let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    copy_dir_clean_with_sequence(source, destination, sequence)
+    copy_dir_clean_with_sequence(source, destination, sequence, None)
 }
 
-fn copy_dir_clean_with_sequence(
+/// Like [`copy_dir_clean`], but only copies files for which `file_filter` returns true.
+/// Directories are still walked; empty directories after filtering are still created when
+/// they contain matching descendants (created on demand when a matching file is copied).
+pub(super) fn copy_dir_clean_filtered(
+    source: &Path,
+    destination: &Path,
+    file_filter: impl Fn(&Path) -> bool,
+) -> Result<(), String> {
+    verify_disjoint_directories(source, destination)?;
+    let sequence = REPLACEMENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    copy_dir_clean_with_sequence(source, destination, sequence, Some(&file_filter))
+}
+
+pub(super) fn copy_dir_clean_with_sequence(
     source: &Path,
     destination: &Path,
     sequence: u64,
+    file_filter: Option<&dyn Fn(&Path) -> bool>,
 ) -> Result<(), String> {
     let staging = replacement_path(destination, "incoming", sequence);
     create_staging_directory(&staging)?;
-    if let Err(error) = copy_dir_contents(source, &staging) {
+    if let Err(error) = copy_dir_contents(source, &staging, file_filter) {
         remove_directory_if_present(&staging)?;
         return Err(error);
     }
@@ -289,7 +303,7 @@ pub(super) fn copy_dir_new(source: &Path, destination: &Path) -> Result<(), Stri
             ));
         }
     }
-    if let Err(error) = copy_dir_recursive(source, destination) {
+    if let Err(error) = copy_dir_recursive(source, destination, None) {
         remove_directory_if_present(destination)?;
         return Err(error);
     }
@@ -328,17 +342,25 @@ pub(super) fn replace_directory(path: &Path) -> Result<(), String> {
     })
 }
 
-fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<(), String> {
+fn copy_dir_recursive(
+    source: &Path,
+    destination: &Path,
+    file_filter: Option<&dyn Fn(&Path) -> bool>,
+) -> Result<(), String> {
     fs::create_dir_all(destination).map_err(|err| {
         format!(
             "failed to create directory {}: {err}",
             destination.display()
         )
     })?;
-    copy_dir_contents(source, destination)
+    copy_dir_contents(source, destination, file_filter)
 }
 
-fn copy_dir_contents(source: &Path, destination: &Path) -> Result<(), String> {
+fn copy_dir_contents(
+    source: &Path,
+    destination: &Path,
+    file_filter: Option<&dyn Fn(&Path) -> bool>,
+) -> Result<(), String> {
     let entries = fs::read_dir(source)
         .map_err(|err| format!("failed to read directory {}: {err}", source.display()))?;
     for entry in entries {
@@ -356,8 +378,11 @@ fn copy_dir_contents(source: &Path, destination: &Path) -> Result<(), String> {
         })?;
         let destination_path = destination.join(entry.file_name());
         if file_type.is_dir() {
-            copy_dir_recursive(&entry.path(), &destination_path)?;
+            copy_dir_recursive(&entry.path(), &destination_path, file_filter)?;
         } else if file_type.is_file() {
+            if file_filter.is_some_and(|filter| !filter(&entry.path())) {
+                continue;
+            }
             fs::copy(entry.path(), &destination_path).map_err(|err| {
                 format!(
                     "failed to copy {} to {}: {err}",
