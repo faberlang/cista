@@ -36,7 +36,7 @@ cista/
 # siblings
   ../faber             project tool (library resolution, package build)
   ../norma             public stdlib source
-  ../faber-runtime     generated Rust runtime dependency
+  ../faber/runtime/rust generated Rust runtime dependency
   ../radix             private compiler session/config surfaces
 ```
 
