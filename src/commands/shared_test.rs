@@ -89,9 +89,11 @@ fn manifest_shape_rejects_sources_for_artifact_kind() {
     let mut diagnostics = Vec::new();
     validate_manifest_shape(&manifest, &mut diagnostics);
 
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic == "source kind `artifact` forbids source.sources"));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == "source kind `artifact` forbids source.sources")
+    );
 }
 
 #[test]
@@ -102,9 +104,11 @@ fn manifest_shape_rejects_artifact_field_for_compile_mode() {
         &mut diagnostics,
     );
 
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic == "target mode `compile` forbids target.artifact"));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == "target mode `compile` forbids target.artifact")
+    );
 }
 
 #[test]
@@ -119,12 +123,16 @@ fn manifest_shape_rejects_compile_fields_for_artifact_mode() {
     let mut diagnostics = Vec::new();
     validate_manifest_shape(&manifest, &mut diagnostics);
 
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic == "target mode `artifact` forbids target.source"));
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic == "target mode `artifact` forbids [target.compile]"));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == "target mode `artifact` forbids target.source")
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == "target mode `artifact` forbids [target.compile]")
+    );
 }
 
 #[test]
@@ -136,12 +144,16 @@ fn manifest_shape_rejects_artifact_provenance_for_compile_mode() {
     let mut diagnostics = Vec::new();
     validate_manifest_shape(&manifest, &mut diagnostics);
 
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic == "target mode `compile` forbids target.triple"));
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic == "target mode `compile` forbids target.rustc"));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == "target mode `compile` forbids target.triple")
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == "target mode `compile` forbids target.rustc")
+    );
 }
 
 #[test]
@@ -152,12 +164,16 @@ fn manifest_shape_requires_provenance_for_artifact_mode() {
         &mut diagnostics,
     );
 
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic == "target mode `artifact` requires target.triple"));
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic == "target mode `artifact` requires target.rustc"));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == "target mode `artifact` requires target.triple")
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == "target mode `artifact` requires target.rustc")
+    );
 }
 
 #[test]
@@ -171,9 +187,11 @@ fn manifest_shape_rejects_bindings_for_generated_policy() {
     let mut diagnostics = Vec::new();
     validate_manifest_shape(&manifest, &mut diagnostics);
 
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic == "binding policy `generated` forbids [[bindings]] rows"));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic == "binding policy `generated` forbids [[bindings]] rows")
+    );
 }
 
 #[test]
@@ -361,9 +379,11 @@ fn validate_package_with_verify_build_rejects_non_rust_language() {
     let Err(diagnostics) = result else {
         panic!("non-rust language must fail with verify_build=true")
     };
-    assert!(diagnostics
-        .iter()
-        .any(|d| d.contains("only implemented for target.language")));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("only implemented for target.language"))
+    );
     fs::remove_dir_all(root).expect("cleanup");
 }
 

@@ -41,9 +41,11 @@ fn package_inspection_does_not_resolve_reserved_cache_namespace() {
     ] {
         let error = super::run(PackageCommand { command })
             .expect_err("reserved cache namespace must not resolve for package inspection");
-        assert!(error
-            .iter()
-            .any(|message| message.contains("is not installed")));
+        assert!(
+            error
+                .iter()
+                .any(|message| message.contains("is not installed"))
+        );
         assert!(
             cached.join("archive").is_file(),
             "failed inspection must preserve registry cache payload"

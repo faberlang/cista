@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::manifest::{
-    read_manifest, read_meta_manifest, CistaManifest, MetaManifest, MANIFEST_FILE,
+    CistaManifest, MANIFEST_FILE, MetaManifest, read_manifest, read_meta_manifest,
 };
 
 #[derive(Clone, Debug)]

@@ -1,6 +1,6 @@
 use crate::cli::{CistaCommand, YankArg};
 
-use super::{staged, CommandResult};
+use super::{CommandResult, staged};
 
 pub fn run(args: YankArg) -> CommandResult {
     staged::run(&CistaCommand::Yank(args))

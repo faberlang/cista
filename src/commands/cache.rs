@@ -1,6 +1,6 @@
 use crate::cli::{CacheCommand, CistaCommand};
 
-use super::{staged, CommandResult};
+use super::{CommandResult, staged};
 
 pub fn run(args: CacheCommand) -> CommandResult {
     staged::run(&CistaCommand::Cache(args))

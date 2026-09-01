@@ -3,7 +3,7 @@ use crate::store;
 use crate::{credentials, registry_http::RegistryHttpClient};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{env, fs_util, shared, Path, PathBuf};
+use super::{Path, PathBuf, env, fs_util, shared};
 
 const REGISTRY_ENV: &str = "CISTA_REGISTRY";
 static REMOTE_STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);

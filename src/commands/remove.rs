@@ -1,7 +1,7 @@
 use crate::cli::PackageArg;
 use crate::store;
 
-use super::{fs, shared, CommandResult};
+use super::{CommandResult, fs, shared};
 use std::io::ErrorKind;
 
 pub fn run(args: &PackageArg) -> CommandResult {

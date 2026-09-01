@@ -69,10 +69,12 @@ fn authenticated_publish_fetch_round_trip_is_immutable() {
         .publish_package("tool", "1.2.3", archive.clone())
         .expect("publish archive");
     assert_eq!(client.fetch_package("tool", "1.2.3").unwrap(), archive);
-    assert!(client
-        .publish_package("tool", "1.2.3", Vec::new())
-        .unwrap_err()
-        .contains("409"));
+    assert!(
+        client
+            .publish_package("tool", "1.2.3", Vec::new())
+            .unwrap_err()
+            .contains("409")
+    );
 }
 
 #[test]
@@ -85,14 +87,18 @@ fn missing_or_wrong_auth_fails_closed() {
         RegistryHttpClient::with_transport("https://cista.dev", Some("wrong"), Box::new(registry))
             .unwrap();
 
-    assert!(anonymous
-        .fetch_package("tool", "1.2.3")
-        .unwrap_err()
-        .contains("401"));
-    assert!(wrong
-        .fetch_package("tool", "1.2.3")
-        .unwrap_err()
-        .contains("401"));
+    assert!(
+        anonymous
+            .fetch_package("tool", "1.2.3")
+            .unwrap_err()
+            .contains("401")
+    );
+    assert!(
+        wrong
+            .fetch_package("tool", "1.2.3")
+            .unwrap_err()
+            .contains("401")
+    );
 }
 
 #[test]

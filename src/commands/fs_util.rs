@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(test)]
 use std::cell::RefCell;
 
-use super::{fs, Path, PathBuf};
+use super::{Path, PathBuf, fs};
 
 static REPLACEMENT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 

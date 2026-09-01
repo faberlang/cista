@@ -4,16 +4,18 @@ use clap::Parser;
 #[test]
 fn install_requires_exactly_one_package_source() {
     assert!(CistaCli::try_parse_from(["cista", "install", "--target-language", "rust"]).is_err());
-    assert!(CistaCli::try_parse_from([
-        "cista",
-        "install",
-        "tool@1.2.3",
-        "--path",
-        ".",
-        "--target-language",
-        "rust",
-    ])
-    .is_err());
+    assert!(
+        CistaCli::try_parse_from([
+            "cista",
+            "install",
+            "tool@1.2.3",
+            "--path",
+            ".",
+            "--target-language",
+            "rust",
+        ])
+        .is_err()
+    );
 }
 
 #[test]
@@ -53,30 +55,34 @@ fn publish_accepts_path_only() {
 
 #[test]
 fn publish_requires_mutually_exclusive_registry_flags() {
-    assert!(CistaCli::try_parse_from([
-        "cista",
-        "publish",
-        "--path",
-        ".",
-        "--registry",
-        "/tmp/registry",
-        "--registry-url",
-        "https://cista.dev",
-    ])
-    .is_err());
+    assert!(
+        CistaCli::try_parse_from([
+            "cista",
+            "publish",
+            "--path",
+            ".",
+            "--registry",
+            "/tmp/registry",
+            "--registry-url",
+            "https://cista.dev",
+        ])
+        .is_err()
+    );
 }
 
 #[test]
 fn publish_accepts_registry_url() {
-    assert!(CistaCli::try_parse_from([
-        "cista",
-        "publish",
-        "--path",
-        ".",
-        "--registry-url",
-        "https://cista.dev",
-    ])
-    .is_ok());
+    assert!(
+        CistaCli::try_parse_from([
+            "cista",
+            "publish",
+            "--path",
+            ".",
+            "--registry-url",
+            "https://cista.dev",
+        ])
+        .is_ok()
+    );
 }
 
 // --- FetchArgs ---
@@ -93,28 +99,32 @@ fn fetch_accepts_package_identity() {
 
 #[test]
 fn fetch_accepts_registry_url() {
-    assert!(CistaCli::try_parse_from([
-        "cista",
-        "fetch",
-        "tool@1.2.3",
-        "--registry-url",
-        "https://cista.dev",
-    ])
-    .is_ok());
+    assert!(
+        CistaCli::try_parse_from([
+            "cista",
+            "fetch",
+            "tool@1.2.3",
+            "--registry-url",
+            "https://cista.dev",
+        ])
+        .is_ok()
+    );
 }
 
 #[test]
 fn fetch_rejects_conflicting_registry_flags() {
-    assert!(CistaCli::try_parse_from([
-        "cista",
-        "fetch",
-        "tool@1.2.3",
-        "--registry",
-        "/tmp/registry",
-        "--registry-url",
-        "https://cista.dev",
-    ])
-    .is_err());
+    assert!(
+        CistaCli::try_parse_from([
+            "cista",
+            "fetch",
+            "tool@1.2.3",
+            "--registry",
+            "/tmp/registry",
+            "--registry-url",
+            "https://cista.dev",
+        ])
+        .is_err()
+    );
 }
 
 // --- LoginArgs ---
@@ -126,13 +136,15 @@ fn login_accepts_default_registry_url() {
 
 #[test]
 fn login_accepts_custom_registry_url() {
-    assert!(CistaCli::try_parse_from([
-        "cista",
-        "login",
-        "--registry-url",
-        "https://packages.example",
-    ])
-    .is_ok());
+    assert!(
+        CistaCli::try_parse_from([
+            "cista",
+            "login",
+            "--registry-url",
+            "https://packages.example",
+        ])
+        .is_ok()
+    );
 }
 
 #[test]
@@ -151,13 +163,15 @@ fn logout_accepts_default_registry_url() {
 
 #[test]
 fn logout_accepts_custom_registry_url() {
-    assert!(CistaCli::try_parse_from([
-        "cista",
-        "logout",
-        "--registry-url",
-        "https://packages.example",
-    ])
-    .is_ok());
+    assert!(
+        CistaCli::try_parse_from([
+            "cista",
+            "logout",
+            "--registry-url",
+            "https://packages.example",
+        ])
+        .is_ok()
+    );
 }
 
 // --- InspectArgs ---

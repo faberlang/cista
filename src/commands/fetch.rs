@@ -1,6 +1,6 @@
 use crate::cli::PackageArg;
 
-use super::{registry, CommandResult};
+use super::{CommandResult, registry};
 
 pub fn run(args: &PackageArg) -> CommandResult {
     let path = if let Some(origin) = &args.registry_url {

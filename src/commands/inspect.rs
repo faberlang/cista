@@ -1,5 +1,5 @@
 use crate::cli::PackageOrPathArg;
-use crate::manifest::{manifest_path, read_manifest, MANIFEST_FILE};
+use crate::manifest::{MANIFEST_FILE, manifest_path, read_manifest};
 use crate::store::{self, ResolvedInspectTarget};
 
 use super::CommandResult;

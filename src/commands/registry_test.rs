@@ -524,16 +524,18 @@ fn cli_routes_remote_registry_without_accepting_local_registry_too() {
         panic!("expected fetch command");
     };
     assert_eq!(args.registry_url.as_deref(), Some("https://cista.dev"));
-    assert!(CistaCli::try_parse_from([
-        "cista",
-        "fetch",
-        "tool@1.2.3",
-        "--registry-url",
-        "https://cista.dev",
-        "--registry",
-        "/tmp/registry",
-    ])
-    .is_err());
+    assert!(
+        CistaCli::try_parse_from([
+            "cista",
+            "fetch",
+            "tool@1.2.3",
+            "--registry-url",
+            "https://cista.dev",
+            "--registry",
+            "/tmp/registry",
+        ])
+        .is_err()
+    );
 }
 
 #[test]
@@ -636,10 +638,12 @@ binding_policy = "generated"
         .expect_err("reserved package version should remain immutable");
 
     assert!(error.contains("already exists and is immutable"));
-    assert!(fs::read_dir(&destination)
-        .expect("read reserved package version")
-        .next()
-        .is_none());
+    assert!(
+        fs::read_dir(&destination)
+            .expect("read reserved package version")
+            .next()
+            .is_none()
+    );
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
 

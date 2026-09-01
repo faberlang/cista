@@ -61,9 +61,11 @@ fn verify_target_build_rejects_non_rust_language() {
     let mut diagnostics = Vec::new();
     verify_target_build(&manifest, None, &mut diagnostics);
 
-    assert!(diagnostics
-        .iter()
-        .any(|d| d.contains("only implemented for target.language")));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("only implemented for target.language"))
+    );
 }
 
 #[test]
@@ -74,9 +76,11 @@ fn verify_target_build_rejects_non_compile_mode() {
     let mut diagnostics = Vec::new();
     verify_target_build(&manifest, None, &mut diagnostics);
 
-    assert!(diagnostics
-        .iter()
-        .any(|d| d.contains("requires target.mode")));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.contains("requires target.mode"))
+    );
 }
 
 #[test]

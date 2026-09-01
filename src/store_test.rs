@@ -1,8 +1,8 @@
 use std::fs;
 
 use super::{
-    find_installed, find_verified_installed, list_installed, list_package_files,
-    read_any_target_manifest, resolve_package_or_path, utf8_directory_name, InstalledPackage,
+    InstalledPackage, find_installed, find_verified_installed, list_installed, list_package_files,
+    read_any_target_manifest, resolve_package_or_path, utf8_directory_name,
 };
 
 fn temporary_dir(label: &str) -> std::path::PathBuf {

@@ -4,7 +4,7 @@ use crate::cli::RunArgs;
 use crate::manifest::PackageRole;
 use crate::{manifest, store};
 
-use super::{rust_target, CommandResult, Path, PathBuf};
+use super::{CommandResult, Path, PathBuf, rust_target};
 
 pub fn run(args: &RunArgs) -> CommandResult {
     let store_root = store::store_root(args.store.as_deref()).map_err(|err| vec![err])?;

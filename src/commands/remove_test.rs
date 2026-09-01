@@ -1,5 +1,5 @@
 use std::fs;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -82,9 +82,11 @@ fn remove_does_not_delete_reserved_cache_namespace() {
     })
     .expect_err("reserved cache namespace must not resolve as removable package");
 
-    assert!(error
-        .iter()
-        .any(|message| message.contains("is not installed")));
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("is not installed"))
+    );
     assert!(
         cached.join("archive").is_file(),
         "failed removal must preserve registry cache payload"
@@ -112,9 +114,11 @@ fn remove_rejects_installed_identity_mismatch_without_deleting_package() {
     })
     .expect_err("identity mismatch must reject destructive remove");
 
-    assert!(error
-        .iter()
-        .any(|message| message.contains("installed package identity mismatch")));
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("installed package identity mismatch"))
+    );
     assert!(
         package.is_dir(),
         "failed removal must preserve mismatched package directory"
@@ -138,9 +142,11 @@ fn remove_rejects_missing_installed_identity_without_deleting_package() {
     })
     .expect_err("missing identity evidence must reject destructive remove");
 
-    assert!(error
-        .iter()
-        .any(|message| message.contains("installed package identity missing")));
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("installed package identity missing"))
+    );
     assert!(
         package.is_dir(),
         "failed removal must preserve package directory without identity evidence"

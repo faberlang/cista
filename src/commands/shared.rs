@@ -3,10 +3,10 @@ use std::path::Component;
 #[cfg(test)]
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use crate::manifest::{read_manifest, BindingPolicy, CistaManifest, SourceKind, TargetMode};
+use crate::manifest::{BindingPolicy, CistaManifest, SourceKind, TargetMode, read_manifest};
 use fs2::FileExt;
 
-use super::{fs, rust_target, Path, PathBuf};
+use super::{Path, PathBuf, fs, rust_target};
 
 pub(super) const STORE_MUTATION_LOCK_FILE: &str = ".cista-install.lock";
 

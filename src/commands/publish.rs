@@ -1,6 +1,6 @@
 use crate::cli::PublishArgs;
 
-use super::{registry, CommandResult};
+use super::{CommandResult, registry};
 
 pub fn run(args: &PublishArgs) -> CommandResult {
     if let Some(origin) = &args.registry_url {

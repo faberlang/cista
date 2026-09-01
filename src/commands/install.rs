@@ -1,12 +1,12 @@
 use crate::cli::InstallArgs;
-use crate::faber_lock::{self, locked_from_install, InstalledLockInput};
+use crate::faber_lock::{self, InstalledLockInput, locked_from_install};
 use crate::manifest::{
     self, BindingPolicy, CistaManifest, MetaManifest, SourceKind, SourceSection, TargetFlags,
     TargetMode, TargetSection,
 };
 use crate::project_manifest::{self, PROJECT_MANIFEST};
 
-use super::{env, fs, fs_util, registry, rust_target, shared, CommandResult, Path, PathBuf};
+use super::{CommandResult, Path, PathBuf, env, fs, fs_util, registry, rust_target, shared};
 
 /// Packages that are platform defaults: lock rewrite does not require a
 /// matching `faber.toml` `[dependencies]` entry.

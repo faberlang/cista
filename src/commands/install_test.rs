@@ -1,6 +1,6 @@
 use super::*;
 use crate::cli::InstallArgs;
-use crate::faber_lock::{inject_write_and_replace_fault, read_lock, WriteAndReplaceFault};
+use crate::faber_lock::{WriteAndReplaceFault, inject_write_and_replace_fault, read_lock};
 use fs2::FileExt;
 use std::fs::OpenOptions;
 use std::process::Command;
@@ -220,10 +220,12 @@ edition = "2021"
     let target = store.join("true/0.1.0/targets/rust").join(triple);
     let executable = target.join("true");
     assert!(executable.is_file(), "installed executable should exist");
-    assert!(Command::new(&executable)
-        .status()
-        .expect("run installed binary")
-        .success());
+    assert!(
+        Command::new(&executable)
+            .status()
+            .expect("run installed binary")
+            .success()
+    );
     let installed = crate::manifest::read_manifest(&target.join("cista.toml"))
         .expect("read installed manifest");
     assert_eq!(installed.source.role, crate::manifest::PackageRole::Bin);
@@ -777,9 +779,11 @@ fn install_commit_failure_preserves_existing_snapshot() {
         verify_target_build: false,
     })
     .expect_err("injected package commit failure should fail install");
-    assert!(error
-        .iter()
-        .any(|message| message.contains("injected failure")));
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("injected failure"))
+    );
     assert_eq!(
         fs::read_to_string(installed.join("interfaces/old.fab")).expect("read old interface"),
         "old interface\n"
@@ -828,9 +832,11 @@ fn install_finalize_failure_after_backup_disposal_preserves_committed_snapshot()
         verify_target_build: false,
     })
     .expect_err("post-commit finalize failure should still report error");
-    assert!(error
-        .iter()
-        .any(|message| message.contains("injected failure after committing replacement")));
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("injected failure after committing replacement"))
+    );
 
     assert_eq!(
         fs::read_to_string(installed.join("interfaces/example.fab"))
@@ -883,9 +889,11 @@ example = "0.1.0"
     })
     .expect_err("lock rewrite failure should fail install");
 
-    assert!(error
-        .iter()
-        .any(|message| message.contains("failed to read") && message.contains("faber.lock")));
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("failed to read") && message.contains("faber.lock"))
+    );
     assert_eq!(
         fs::read_to_string(installed.join("interfaces/old.fab")).expect("read existing interface"),
         "old interface\n"
@@ -933,8 +941,9 @@ example = "0.1.0"
     })
     .expect_err("post-rename lock sync failure should still report install error");
 
-    assert!(error.iter().any(|message| message
-        .contains("injected failure while syncing parent directory after replacing")));
+    assert!(error.iter().any(|message| {
+        message.contains("injected failure while syncing parent directory after replacing")
+    }));
     let lock = read_lock(&project.join(faber_lock::LOCK_FILE)).expect("read committed lock");
     let locked = lock
         .packages
@@ -1001,9 +1010,11 @@ path = "../dependency"
         verify_target_build: false,
     })
     .expect_err("injected meta commit failure should fail install");
-    assert!(error
-        .iter()
-        .any(|message| message.contains("injected failure")));
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("injected failure"))
+    );
     assert_eq!(
         fs::read_to_string(installed.join("cista.toml")).expect("read old meta snapshot"),
         "old meta snapshot\n"
@@ -1170,9 +1181,11 @@ path = "../dependency"
         verify_target_build: false,
     })
     .expect_err("post-commit finalize failure should still report error");
-    assert!(error
-        .iter()
-        .any(|message| message.contains("injected failure after committing replacement")));
+    assert!(
+        error
+            .iter()
+            .any(|message| message.contains("injected failure after committing replacement"))
+    );
 
     let parsed = crate::manifest::read_meta_manifest(&installed.join("cista.toml"))
         .expect("read committed meta manifest")
