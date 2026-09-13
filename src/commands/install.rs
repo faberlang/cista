@@ -118,8 +118,8 @@ fn install_checked_package_with_locks(
 ) -> CommandResult {
     let mut installed = install_checked_package_transaction(checked, store_root)?;
 
-    if let Some(project_root) = project_root {
-        if let Err(error) = rewrite_project_lock(&project_root, checked, &installed.paths) {
+    if let Some(project_root) = project_root
+        && let Err(error) = rewrite_project_lock(&project_root, checked, &installed.paths) {
             if error.lock_committed {
                 let mut errors = error.messages;
                 if let Err(finalize_error) = installed.replacement.finalize() {
@@ -129,7 +129,6 @@ fn install_checked_package_with_locks(
             }
             return Err(rollback_install(&mut installed, error.messages));
         }
-    }
 
     installed
         .replacement
