@@ -53,6 +53,7 @@ pub struct SourceFile {
 ///
 /// Skips `tests/` directories, files ending in `_test.rs` or `.test.rs`,
 /// files under `test_support` paths, and files matching `exclude_path_suffixes`.
+#[must_use]
 pub fn collect_production_files(config: &ScanConfig) -> Vec<SourceFile> {
     let mut files = Vec::new();
     for root in &config.source_roots {
@@ -109,6 +110,7 @@ fn collect_rs_files(dir: &Path, config: &ScanConfig, out: &mut Vec<SourceFile>) 
 /// Tracks `.unwrap()`, `.expect(`, `panic!(`, `unreachable!(`, `todo!(`,
 /// `unimplemented!(`, `let _ =`, inline `#[cfg(test)] mod tests {` blocks,
 /// and `#[test]` attributes.
+#[must_use]
 pub fn count_budgets(files: &[SourceFile], subtract_self_expect: bool) -> Counts {
     let mut counts = Counts::default();
     for file in files {
@@ -156,6 +158,9 @@ pub fn assert_budgets(counts: Counts, budgets: Budgets) {
 
 /// Verify that every source file with a companion `_test.rs` file declares
 /// it via the `#[cfg(test)] #[path = "..."] mod tests;` convention.
+///
+/// # Panics
+/// Panics when a companion test module does not use the required convention.
 pub fn assert_companion_tests_use_cfg_path_module_convention(files: &[SourceFile]) {
     for file in files {
         let Some(companion) = companion_test_path(&file.path) else {
@@ -222,6 +227,7 @@ fn count_let_underscore(haystack: &str) -> usize {
 /// Replace comments, strings, char literals, and lifetimes with spaces.
 ///
 /// Preserves newlines so line-oriented counting stays accurate.
+#[must_use]
 pub fn scrub_rust_source(source: &str) -> String {
     #[derive(Clone, Copy)]
     enum State {
