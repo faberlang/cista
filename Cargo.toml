@@ -22,7 +22,7 @@ path = "src/lib.rs"
 name = "cista"
 path = "src/bin/cista.rs"
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = "deny"
 
 [dependencies]
