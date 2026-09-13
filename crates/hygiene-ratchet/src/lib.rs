@@ -224,6 +224,13 @@ fn count_let_underscore(haystack: &str) -> usize {
         .count()
 }
 
+fn scrub_escape(chars: &mut impl Iterator<Item = char>, out: &mut String) {
+    out.push(' ');
+    if let Some(escaped) = chars.next() {
+        out.push(if escaped == '\n' { '\n' } else { ' ' });
+    }
+}
+
 /// Replace comments, strings, char literals, and lifetimes with spaces.
 ///
 /// Preserves newlines so line-oriented counting stays accurate.
@@ -305,10 +312,7 @@ pub fn scrub_rust_source(source: &str) -> String {
             }
             State::String => {
                 if ch == '\\' {
-                    out.push(' ');
-                    if let Some(escaped) = chars.next() {
-                        out.push(if escaped == '\n' { '\n' } else { ' ' });
-                    }
+                    scrub_escape(&mut chars, &mut out);
                 } else if ch == '"' {
                     out.push(' ');
                     state = State::Code;
@@ -320,10 +324,7 @@ pub fn scrub_rust_source(source: &str) -> String {
             }
             State::Char => {
                 if ch == '\\' {
-                    out.push(' ');
-                    if let Some(escaped) = chars.next() {
-                        out.push(if escaped == '\n' { '\n' } else { ' ' });
-                    }
+                    scrub_escape(&mut chars, &mut out);
                 } else if ch == '\'' {
                     out.push(' ');
                     state = State::Code;
