@@ -14,6 +14,7 @@ fn package(name: &str, version: &str) -> LockedPackage {
         artifact: String::new(),
         crate_name: name.to_owned(),
         rustc: "rustc test".to_owned(),
+        content_sha256: String::new(),
     }
 }
 
