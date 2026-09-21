@@ -116,7 +116,9 @@ fn install_checked_package_with_locks(
     project_root: Option<PathBuf>,
     install_locks: shared::StoreMutationLocks,
 ) -> CommandResult {
-    let mut installed = install_checked_package_transaction(checked, store_root)?;
+    let recorded = recorded_content_sha256(&checked.manifest, project_root.as_deref())?;
+    let mut installed =
+        install_checked_package_transaction(checked, store_root, recorded.as_deref())?;
 
     if let Some(project_root) = project_root
         && let Err(error) = rewrite_project_lock(&project_root, checked, &installed.paths)
@@ -203,7 +205,9 @@ fn install_meta_package(
     }
     let mut installed_dependencies = Vec::with_capacity(checked_dependencies.len());
     for checked in &checked_dependencies {
-        match install_checked_package_transaction(checked, store_root) {
+        // Meta install never consults a project lock (it refuses --project),
+        // so no digest is recorded to gate on.
+        match install_checked_package_transaction(checked, store_root, None) {
             Ok(installed) => installed_dependencies.push(installed),
             Err(errors) => return Err(rollback_installs(&mut installed_dependencies, errors)),
         }
@@ -302,12 +306,18 @@ struct InstalledPackage {
 fn install_checked_package_transaction(
     checked: &shared::CheckedPackage,
     store_root: &Path,
+    recorded_content_sha256: Option<&str>,
 ) -> Result<InstalledPackage, Vec<String>> {
     let package_store_root = shared::package_store_root(store_root, &checked.manifest);
     verify_install_store_disjoint(&checked.package_root, store_root, &package_store_root)
         .map_err(|err| vec![err])?;
     let staging = fs_util::stage_directory(&package_store_root).map_err(|err| vec![err])?;
-    let result = prepare_package_snapshot(checked, &package_store_root, &staging);
+    let result = prepare_package_snapshot(
+        checked,
+        &package_store_root,
+        &staging,
+        recorded_content_sha256,
+    );
     let installed = match result {
         Ok(installed) => installed,
         Err(errors) => return Err(cleanup_staged_install(&staging, errors)),
@@ -391,7 +401,12 @@ fn prepare_package_snapshot(
     checked: &shared::CheckedPackage,
     package_store_root: &Path,
     staging: &Path,
+    recorded_content_sha256: Option<&str>,
 ) -> Result<InstalledPaths, Vec<String>> {
+    // Strict content gate (G1-U4): a locked package installs only against its
+    // recorded `content_sha256`; refusal happens before anything is built, so
+    // no cargo command is ever constructed on the failing path.
+    verify_recorded_content_digest(checked, package_store_root, recorded_content_sha256)?;
     let manifest = &checked.manifest;
     ensure_rust_source_install(manifest)?;
 
@@ -448,6 +463,76 @@ fn cleanup_staged_install(staging: &Path, mut errors: Vec<String>) -> Vec<String
         errors.push(error);
     }
     errors
+}
+
+/// The package's recorded `content_sha256` from the project lock, when the
+/// project is locked on exactly this package@version. A row written before
+/// the digest field existed carries an empty writer-side value, read as
+/// `Some("")`.
+///
+/// # Errors
+/// Returns an error when the project lock cannot be read.
+fn recorded_content_sha256(
+    manifest: &CistaManifest,
+    project_root: Option<&Path>,
+) -> Result<Option<String>, Vec<String>> {
+    let Some(project_root) = project_root else {
+        return Ok(None);
+    };
+    let lock =
+        faber_lock::read_lock(&faber_lock::lock_path(project_root)).map_err(|err| vec![err])?;
+    Ok(lock
+        .packages
+        .iter()
+        .find(|package| {
+            package.name == manifest.source.package && package.version == manifest.source.version
+        })
+        .map(|package| package.content_sha256.clone()))
+}
+
+/// Strict content gate: a project-locked package installs only when its
+/// recorded `content_sha256` is present and still matches the store content
+/// being re-snapshotted. Absent and mismatched both fail closed; a package
+/// not locked in the project has no record to verify and proceeds to record
+/// one.
+///
+/// # Errors
+/// Returns an error when the recorded digest is missing or does not match
+/// the store content.
+fn verify_recorded_content_digest(
+    checked: &shared::CheckedPackage,
+    package_store_root: &Path,
+    recorded_content_sha256: Option<&str>,
+) -> Result<(), Vec<String>> {
+    let Some(recorded) = recorded_content_sha256 else {
+        return Ok(());
+    };
+    let locked = format!(
+        "`{}@{}`",
+        checked.manifest.source.package, checked.manifest.source.version
+    );
+    if recorded.is_empty() {
+        return Err(vec![format!(
+            "install of locked package {locked} requires a recorded `content_sha256`; \
+             the faber.lock row predates the digest field, so nothing may be built \
+             until the package is reinstalled to record one"
+        )]);
+    }
+    let actual = faber_lock::staged_content_sha256(package_store_root).map_err(|err| {
+        vec![format!(
+            "install of locked package {locked} cannot verify `content_sha256` \
+             against store content: {err}"
+        )]
+    })?;
+    if actual != recorded {
+        return Err(vec![format!(
+            "install of locked package {locked} found a `content_sha256` mismatch: \
+             the lock records `{recorded}` but the store content at {} digests to \
+             `{actual}`; nothing may be built until the package is reinstalled",
+            package_store_root.display()
+        )]);
+    }
+    Ok(())
 }
 
 fn is_interfaces_only_package(manifest: &CistaManifest) -> bool {
