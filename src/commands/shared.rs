@@ -133,12 +133,13 @@ pub(super) fn validate_package(
     validate_manifest_shape(&manifest, &mut diagnostics);
 
     if let Some(expected) = expected_target_language
-        && manifest.target.language != expected {
-            diagnostics.push(format!(
-                "target language mismatch: expected `{expected}`, manifest declares `{}`",
-                manifest.target.language
-            ));
-        }
+        && manifest.target.language != expected
+    {
+        diagnostics.push(format!(
+            "target language mismatch: expected `{expected}`, manifest declares `{}`",
+            manifest.target.language
+        ));
+    }
 
     let paths = resolve_package_paths(&package_root, &manifest, &mut diagnostics);
     let interface_symbols = paths
@@ -508,12 +509,13 @@ fn validate_target_paths(
     }
 
     if let Some(path) = &paths.artifact
-        && !path.is_file() {
-            diagnostics.push(format!(
-                "target.artifact does not point to a file: {}",
-                path.display()
-            ));
-        }
+        && !path.is_file()
+    {
+        diagnostics.push(format!(
+            "target.artifact does not point to a file: {}",
+            path.display()
+        ));
+    }
 }
 
 fn validate_bindings(
