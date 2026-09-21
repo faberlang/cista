@@ -119,16 +119,17 @@ fn install_checked_package_with_locks(
     let mut installed = install_checked_package_transaction(checked, store_root)?;
 
     if let Some(project_root) = project_root
-        && let Err(error) = rewrite_project_lock(&project_root, checked, &installed.paths) {
-            if error.lock_committed {
-                let mut errors = error.messages;
-                if let Err(finalize_error) = installed.replacement.finalize() {
-                    errors.push(finalize_error);
-                }
-                return Err(errors);
+        && let Err(error) = rewrite_project_lock(&project_root, checked, &installed.paths)
+    {
+        if error.lock_committed {
+            let mut errors = error.messages;
+            if let Err(finalize_error) = installed.replacement.finalize() {
+                errors.push(finalize_error);
             }
-            return Err(rollback_install(&mut installed, error.messages));
+            return Err(errors);
         }
+        return Err(rollback_install(&mut installed, error.messages));
+    }
 
     installed
         .replacement
@@ -289,6 +290,8 @@ struct InstalledPaths {
     /// interfaces-only packages.
     artifact_name: PathBuf,
     interfaces_only: bool,
+    /// Digest over the staged snapshot, computed before the store commit.
+    content_sha256: String,
 }
 
 struct InstalledPackage {
@@ -428,6 +431,7 @@ fn prepare_package_snapshot(
         install_built_rust_target(manifest, artifact, staging, &target_triple, &rustc_version)
             .map_err(|err| vec![err])?
     };
+    let content_sha256 = faber_lock::staged_content_sha256(staging).map_err(|err| vec![err])?;
 
     Ok(InstalledPaths {
         package_store_root: package_store_root.to_path_buf(),
@@ -435,6 +439,7 @@ fn prepare_package_snapshot(
         rustc_version,
         artifact_name,
         interfaces_only,
+        content_sha256,
     })
 }
 
@@ -689,6 +694,7 @@ fn rewrite_project_lock(
         rustc: &installed.rustc_version,
         kind: "source",
         has_artifact: !installed.interfaces_only && !installed.artifact_name.as_os_str().is_empty(),
+        content_sha256: &installed.content_sha256,
     });
 
     let lock_path = faber_lock::lock_path(project_root);

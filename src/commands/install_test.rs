@@ -1291,3 +1291,120 @@ incipit {
 
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
+
+/// Independent restatement of the contract's canonical content stream
+/// (faber-lock contract, `content_sha256`): every regular file under the
+/// installed package root, ordered by raw byte order of the `/`-separated
+/// relative path, each contributing `path`, NUL, u64 big-endian length,
+/// bytes. Deliberately not calling the writer's implementation so the pin
+/// cannot pass by construction.
+fn independent_staged_digest(root: &Path) -> String {
+    use sha2::Digest;
+
+    fn walk(directory: &Path, prefix: &str, files: &mut Vec<(String, PathBuf)>) {
+        for entry in fs::read_dir(directory).expect("read staged directory") {
+            let entry = entry.expect("staged entry");
+            let name = entry.file_name().to_str().expect("utf8 name").to_owned();
+            let relative = if prefix.is_empty() {
+                name
+            } else {
+                format!("{prefix}/{name}")
+            };
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, &relative, files);
+            } else {
+                files.push((relative, path));
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    walk(root, "", &mut files);
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut hasher = sha2::Sha256::new();
+    for (relative, path) in &files {
+        let contents = fs::read(path).expect("read staged file");
+        hasher.update(relative.as_bytes());
+        hasher.update([0u8]);
+        hasher.update((contents.len() as u64).to_be_bytes());
+        hasher.update(&contents);
+    }
+    let mut hex = String::with_capacity(64);
+    for byte in hasher.finalize() {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    hex
+}
+
+#[test]
+fn install_records_staged_content_sha256_in_lock() {
+    let root = temp_root("install-content-digest");
+    let package = root.join("norma");
+    let store = root.join("store");
+    let project = root.join("app");
+    fs::create_dir_all(package.join("src")).expect("create package src");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        package.join("cista.toml"),
+        r#"[source]
+package = "norma"
+version = "0.1.0"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "src"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+crate = "norma"
+"#,
+    )
+    .expect("write cista manifest");
+    fs::write(
+        package.join("src/solum.fab"),
+        "functio lege(textus via) → textus { redde via }\n",
+    )
+    .expect("write interface");
+    fs::write(
+        project.join(PROJECT_MANIFEST),
+        r#"[package]
+name = "app"
+version = "0.1.0"
+edition = "2026"
+
+[paths]
+source = "src"
+entry = "main.fab"
+"#,
+    )
+    .expect("write project manifest");
+
+    run(&InstallArgs {
+        path: Some(package.clone()),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.clone()),
+        registry: None,
+        project: Some(project.clone()),
+        verify_target_build: false,
+    })
+    .expect("install package");
+
+    let installed_root = store.join("norma/0.1.0");
+    let lock_text = fs::read_to_string(project.join(faber_lock::LOCK_FILE)).expect("read lock");
+    let lock: toml::Value = toml::from_str(&lock_text).expect("parse lock");
+    let digest = lock["package"][0]["content_sha256"]
+        .as_str()
+        .expect("content_sha256 recorded in lock")
+        .to_owned();
+    assert_eq!(
+        digest,
+        independent_staged_digest(&installed_root),
+        "lock digest must match an independently computed digest of the staged content"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}

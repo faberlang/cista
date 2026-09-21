@@ -4,6 +4,7 @@
 //! consumes absolute paths from it without knowing about the package store.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 #[cfg(test)]
 use std::cell::RefCell;
 use std::fs;
@@ -78,6 +79,11 @@ pub struct LockedPackage {
     #[serde(rename = "crate")]
     pub crate_name: String,
     pub rustc: String,
+    /// SHA-256 over the staged package snapshot; the canonical stream is
+    /// defined by the `faber.lock` contract. Empty on records written before
+    /// the field existed; never serialized empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub content_sha256: String,
 }
 
 /// Read a lockfile if present; missing file yields an empty lock.
@@ -298,12 +304,98 @@ pub fn absolute_display(path: &Path) -> String {
         .to_string()
 }
 
+/// SHA-256 over a staged package snapshot's canonical content stream — the
+/// definition the `faber.lock` contract records for `content_sha256`: every
+/// regular file under `root`, ordered by raw byte order of the `/`-separated
+/// path relative to `root`, each contributing its relative path, one NUL
+/// byte, the file length as u64 big-endian, then the file bytes.
+///
+/// # Errors
+/// Returns an error when the tree cannot be read, a file name is not UTF-8,
+/// or an entry is neither a regular file nor a directory.
+pub fn staged_content_sha256(root: &Path) -> Result<String, String> {
+    let mut relative_paths = Vec::new();
+    collect_staged_regular_files(root, &mut String::new(), &mut relative_paths)?;
+    relative_paths.sort();
+    let mut hasher = Sha256::new();
+    for relative in &relative_paths {
+        let staged = root.join(relative);
+        let contents = fs::read(&staged)
+            .map_err(|err| format!("failed to read staged file {}: {err}", staged.display()))?;
+        hasher.update(relative.as_bytes());
+        hasher.update([0u8]);
+        hasher.update((contents.len() as u64).to_be_bytes());
+        hasher.update(&contents);
+    }
+    Ok(lowercase_hex(&hasher.finalize()))
+}
+
+fn collect_staged_regular_files(
+    directory: &Path,
+    prefix: &mut String,
+    relative_paths: &mut Vec<String>,
+) -> Result<(), String> {
+    let entries = fs::read_dir(directory).map_err(|err| {
+        format!(
+            "failed to read staged directory {}: {err}",
+            directory.display()
+        )
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|err| {
+            format!(
+                "failed to read staged entry in {}: {err}",
+                directory.display()
+            )
+        })?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            return Err(format!(
+                "staged file name is not UTF-8: {}",
+                entry.path().display()
+            ));
+        };
+        let file_type = entry.file_type().map_err(|err| {
+            format!(
+                "failed to read staged entry type {}: {err}",
+                entry.path().display()
+            )
+        })?;
+        let separator = if prefix.is_empty() { "" } else { "/" };
+        if file_type.is_dir() {
+            let mut child_prefix = prefix.clone();
+            child_prefix.push_str(separator);
+            child_prefix.push_str(name);
+            collect_staged_regular_files(&entry.path(), &mut child_prefix, relative_paths)?;
+        } else if file_type.is_file() {
+            relative_paths.push(format!("{prefix}{separator}{name}"));
+        } else {
+            return Err(format!(
+                "staged snapshot entry is neither a regular file nor a directory: {}",
+                entry.path().display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn lowercase_hex(bytes: &[u8]) -> String {
+    const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut hex = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        hex.push(HEX_DIGITS[(byte >> 4) as usize] as char);
+        hex.push(HEX_DIGITS[(byte & 0x0f) as usize] as char);
+    }
+    hex
+}
+
 /// Build a lock record for a successfully installed package.
 ///
 /// When `has_artifact` is false (interfaces-only install), `artifact` is left
 /// empty. The field is still serialized because `faber` treats it as part of
 /// the lockfile schema and uses the empty string to distinguish source-only
-/// interfaces from missing lock data.
+/// interfaces from missing lock data. `content_sha256` carries the staged
+/// snapshot digest and is omitted from the file when empty.
 pub struct InstalledLockInput<'a> {
     pub name: &'a str,
     pub version: &'a str,
@@ -316,6 +408,8 @@ pub struct InstalledLockInput<'a> {
     pub rustc: &'a str,
     pub kind: &'a str,
     pub has_artifact: bool,
+    /// Digest over the staged snapshot (see `staged_content_sha256`).
+    pub content_sha256: &'a str,
 }
 
 #[must_use]
@@ -344,6 +438,7 @@ pub fn locked_from_install(input: &InstalledLockInput<'_>) -> LockedPackage {
         artifact,
         crate_name: input.crate_name.to_owned(),
         rustc: input.rustc.to_owned(),
+        content_sha256: input.content_sha256.to_owned(),
     }
 }
 
