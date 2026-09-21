@@ -1408,3 +1408,212 @@ entry = "main.fab"
 
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
+
+// --- G1-U4 strict content gate: locked packages install only against their
+// --- recorded `content_sha256`, before any cargo command is constructed.
+
+fn write_compiled_package(package: &Path) {
+    fs::create_dir_all(package.join("src")).expect("create package src");
+    fs::create_dir_all(package.join("rust/src")).expect("create rust target src");
+    fs::write(
+        package.join("cista.toml"),
+        r#"[source]
+package = "gatedpkg"
+version = "0.1.0"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "src"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+crate = "gatedpkg"
+source = "rust"
+
+[target.compile]
+emit = "library"
+crate_type = "rlib"
+edition = "2021"
+"#,
+    )
+    .expect("write cista manifest");
+    fs::write(
+        package.join("src/gatedpkg.fab"),
+        "functio lege(textus via) → textus { redde via }\n",
+    )
+    .expect("write interface");
+    fs::write(
+        package.join("rust/Cargo.toml"),
+        r#"[package]
+name = "gatedpkg"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .expect("write Cargo.toml");
+    fs::write(package.join("rust/src/lib.rs"), "pub fn gated() {}\n").expect("write lib.rs");
+}
+
+fn write_locked_project(project: &Path) {
+    fs::create_dir_all(project).expect("create project");
+    fs::write(
+        project.join(PROJECT_MANIFEST),
+        r#"[package]
+name = "app"
+version = "0.1.0"
+edition = "2026"
+
+[paths]
+source = "src"
+entry = "main.fab"
+
+[dependencies]
+gatedpkg = "0.1.0"
+"#,
+    )
+    .expect("write project manifest");
+}
+
+fn gate_install_args(package: &Path, store: &Path, project: &Path) -> InstallArgs {
+    InstallArgs {
+        path: Some(package.to_path_buf()),
+        package: None,
+        manifest: PathBuf::from("cista.toml"),
+        target_language: "rust".to_owned(),
+        store: Some(store.to_path_buf()),
+        registry: None,
+        project: Some(project.to_path_buf()),
+        verify_target_build: false,
+    }
+}
+
+fn locked_digest(project: &Path) -> String {
+    let lock = read_lock(&project.join(faber_lock::LOCK_FILE)).expect("read lock");
+    let row = lock
+        .packages
+        .iter()
+        .find(|package| package.name == "gatedpkg")
+        .expect("gatedpkg lock record");
+    assert!(
+        row.content_sha256.len() == 64
+            && row
+                .content_sha256
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')),
+        "recorded digest must be 64 lowercase hex characters, got `{}`",
+        row.content_sha256
+    );
+    row.content_sha256.clone()
+}
+
+#[test]
+fn install_refuses_locked_package_without_recorded_content_sha256() {
+    let root = temp_root("gate-digest-absent");
+    let package = root.join("gatedpkg");
+    let store = root.join("store");
+    let project = root.join("app");
+    write_compiled_package(&package);
+    write_locked_project(&project);
+    // A pre-field lock row: full schema minus the digest field.
+    fs::write(
+        project.join(faber_lock::LOCK_FILE),
+        format!(
+            r#"[[package]]
+name = "gatedpkg"
+version = "0.1.0"
+source = "path:{}"
+package_root = "{}/gatedpkg/0.1.0"
+kind = "source"
+target_language = "rust"
+target_triple = "aarch64-apple-darwin"
+target_manifest = "{}/gatedpkg/0.1.0/targets/rust/aarch64-apple-darwin/cista.toml"
+interface_root = "{}/gatedpkg/0.1.0/interfaces"
+artifact = ""
+crate = "gatedpkg"
+rustc = "0.0.0-test"
+"#,
+            package.display(),
+            store.display(),
+            store.display(),
+            store.display()
+        ),
+    )
+    .expect("write pre-field lock");
+
+    let error = run(&gate_install_args(&package, &store, &project))
+        .expect_err("absent digest must refuse the install");
+    let joined = error.join("\n");
+    assert!(
+        joined.contains("gatedpkg@0.1.0") && joined.contains("content_sha256"),
+        "refusal must name the package and its digest state, got: {joined}"
+    );
+    assert!(
+        !package.join("rust/target").exists(),
+        "refused install must not construct a cargo build command"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn install_refuses_locked_package_on_content_sha256_mismatch() {
+    let root = temp_root("gate-digest-mismatch");
+    let package = root.join("gatedpkg");
+    let store = root.join("store");
+    let project = root.join("app");
+    write_compiled_package(&package);
+    write_locked_project(&project);
+
+    run(&gate_install_args(&package, &store, &project)).expect("first install records digest");
+    let recorded = locked_digest(&project);
+    assert!(package.join("rust/target").exists(), "first install builds");
+
+    // Break lock<->store agreement, then clear the build dir so a second
+    // cargo invocation would be observable.
+    fs::write(
+        store.join("gatedpkg/0.1.0/interfaces/gatedpkg.fab"),
+        "functio lege(textus via) → textus { redde via }\n// tampered\n",
+    )
+    .expect("tamper store content");
+    fs::remove_dir_all(package.join("rust/target")).expect("clear build dir");
+
+    let error = run(&gate_install_args(&package, &store, &project))
+        .expect_err("mismatched digest must refuse the install");
+    let joined = error.join("\n");
+    assert!(
+        joined.contains("gatedpkg@0.1.0")
+            && joined.contains("mismatch")
+            && joined.contains(&recorded),
+        "refusal must name the package, the mismatch, and the recorded digest, got: {joined}"
+    );
+    assert!(
+        !package.join("rust/target").exists(),
+        "refused install must not construct a cargo build command"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn install_builds_locked_package_when_content_sha256_matches() {
+    let root = temp_root("gate-digest-match");
+    let package = root.join("gatedpkg");
+    let store = root.join("store");
+    let project = root.join("app");
+    write_compiled_package(&package);
+    write_locked_project(&project);
+
+    run(&gate_install_args(&package, &store, &project)).expect("first install records digest");
+    locked_digest(&project);
+    fs::remove_dir_all(package.join("rust/target")).expect("clear build dir");
+
+    run(&gate_install_args(&package, &store, &project)).expect("matching digest builds as before");
+    assert!(
+        package.join("rust/target").exists(),
+        "matching digest must reach the cargo build"
+    );
+    locked_digest(&project); // still a well-formed recorded digest after rewrite
+
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
