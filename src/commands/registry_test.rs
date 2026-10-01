@@ -710,3 +710,72 @@ binding_policy = "generated"
     assert!(!source.join("1.2.3").exists());
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
+
+fn write_minimal_publish_source(source: &Path) {
+    fs::create_dir_all(source.join("interfaces")).expect("create source interfaces");
+    fs::write(
+        source.join("cista.toml"),
+        r#"[source]
+package = "tool"
+version = "1.2.3"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+"#,
+    )
+    .expect("write package manifest");
+    fs::write(
+        source.join("interfaces/tool.fab"),
+        "functio lege() → nihil { redde nihil }\n",
+    )
+    .expect("write package interface");
+}
+
+#[test]
+fn publish_records_content_digest_of_published_directory() {
+    let root = temp_root().join("publish-digest-record");
+    let source = root.join("source");
+    let registry = root.join("registry");
+    write_minimal_publish_source(&source);
+
+    let destination =
+        publish(&source, Path::new("cista.toml"), Some(&registry)).expect("publish package");
+
+    let record = destination
+        .parent()
+        .expect("package directory")
+        .join("1.2.3.content-sha256");
+    let recorded = fs::read_to_string(&record).expect("read digest record");
+    let expected = crate::faber_lock::staged_content_sha256(&destination).expect("digest");
+    assert_eq!(recorded, expected);
+    assert_eq!(recorded.len(), 64);
+
+    let error = publish(&source, Path::new("cista.toml"), Some(&registry))
+        .expect_err("republish must stay immutable");
+    assert!(error.contains("already exists and is immutable"));
+    assert_eq!(fs::read_to_string(&record).expect("record kept"), expected);
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn publish_record_write_failure_leaves_no_published_directory() {
+    let root = temp_root().join("publish-digest-record-failure");
+    let source = root.join("source");
+    let registry = root.join("registry");
+    write_minimal_publish_source(&source);
+    // A directory squatting on the record path makes the record write fail.
+    let record = registry.join("tool/1.2.3.content-sha256");
+    fs::create_dir_all(&record).expect("block record path");
+
+    let error = publish(&source, Path::new("cista.toml"), Some(&registry))
+        .expect_err("record write failure must fail publish");
+
+    assert!(error.contains("content digest record"));
+    assert!(!registry.join("tool/1.2.3").exists());
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}

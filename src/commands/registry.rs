@@ -154,7 +154,29 @@ pub(super) fn publish(
             error
         }
     })?;
+    write_content_digest_record(&destination).inspect_err(|_| {
+        let _ = std::fs::remove_dir_all(&destination);
+    })?;
     Ok(destination)
+}
+
+/// Path of the digest record beside a published version directory:
+/// `<registry>/<name>/<version>.content-sha256`.
+fn content_digest_record_path(version_directory: &Path) -> PathBuf {
+    let mut record = version_directory.as_os_str().to_owned();
+    record.push(".content-sha256");
+    PathBuf::from(record)
+}
+
+fn write_content_digest_record(version_directory: &Path) -> Result<(), String> {
+    let digest = crate::faber_lock::staged_content_sha256(version_directory)?;
+    let record = content_digest_record_path(version_directory);
+    std::fs::write(&record, &digest).map_err(|error| {
+        format!(
+            "failed to write content digest record {}: {error}",
+            record.display()
+        )
+    })
 }
 
 pub(super) fn fetch_to_cache(
