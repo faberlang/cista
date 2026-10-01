@@ -384,6 +384,7 @@ fn install_by_name_waits_for_store_mutation_lock_before_cache_mutation() {
     let registry_package = registry.join("example/0.1.0");
     let store = root.join("store");
     write_interfaces_only_package(&registry_package, "example");
+    registry::write_content_digest_record(&registry_package).expect("record registry digest");
 
     let lock = shared::acquire_store_mutation_locks(&store, None).expect("hold store lock");
     let cache = store.join(".cache/registry/example/0.1.0");

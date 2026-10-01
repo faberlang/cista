@@ -42,6 +42,11 @@ binding_policy = "generated"
     .expect("write package interface");
 }
 
+/// Records the publish-time digest for a hand-built registry package.
+fn seal(registry_package: &Path) {
+    write_content_digest_record(registry_package).expect("record registry digest");
+}
+
 #[test]
 fn fetch_to_cache_waits_for_store_mutation_lock() {
     let root = temp_root().join("fetch-cache-lock");
@@ -49,6 +54,7 @@ fn fetch_to_cache_waits_for_store_mutation_lock() {
     let registry_package = registry.join("tool/1.2.3");
     let store = root.join("store");
     write_interfaces_only_registry_package(&registry_package, "tool", "1.2.3");
+    seal(&registry_package);
 
     let lock = shared::acquire_store_mutation_locks(&store, None).expect("hold store lock");
     let cache = store
@@ -311,6 +317,7 @@ binding_policy = "generated"
 "#,
     )
     .expect("write mismatched manifest");
+    seal(&registry_package);
     fs::write(cached_package.join("payload"), "last good package").expect("seed cache");
 
     let error = fetch_to_cache(
@@ -388,6 +395,7 @@ binding_policy = "generated"
 "#,
     )
     .expect("write invalid manifest");
+    seal(&registry_package);
     fs::write(cached_package.join("payload"), "last good package").expect("seed cache");
 
     let error = fetch_to_cache(
@@ -426,6 +434,7 @@ path = "../true"
 "#,
     )
     .expect("write invalid meta manifest");
+    seal(&registry_package);
     fs::write(cached_package.join("payload"), "last good meta").expect("seed cache");
 
     let error = fetch_to_cache(
@@ -777,5 +786,61 @@ fn publish_record_write_failure_leaves_no_published_directory() {
 
     assert!(error.contains("content digest record"));
     assert!(!registry.join("tool/1.2.3").exists());
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn fetch_installs_package_when_content_digest_record_matches() {
+    let root = temp_root().join("fetch-digest-match");
+    let source = root.join("source");
+    let registry = root.join("registry");
+    let store = root.join("store");
+    write_minimal_publish_source(&source);
+    publish(&source, Path::new("cista.toml"), Some(&registry)).expect("publish package");
+
+    let fetched =
+        fetch_to_cache("tool@1.2.3", Some(&registry), Some(&store)).expect("matching record");
+
+    assert!(fetched.join("cista.toml").is_file());
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn fetch_refuses_package_without_content_digest_record_before_cache_copy() {
+    let root = temp_root().join("fetch-digest-absent");
+    let registry_package = root.join("registry/tool/1.2.3");
+    let store = root.join("store");
+    write_interfaces_only_registry_package(&registry_package, "tool", "1.2.3");
+
+    let error = fetch_to_cache("tool@1.2.3", Some(&root.join("registry")), Some(&store))
+        .expect_err("absent record must be refused");
+
+    assert!(error.contains("tool@1.2.3"), "{error}");
+    assert!(error.contains("republish"), "{error}");
+    assert!(!store.join(".cache/registry/tool/1.2.3").exists());
+    fs::remove_dir_all(root).expect("cleanup temp root");
+}
+
+#[test]
+fn fetch_refuses_package_changed_after_publish_before_cache_copy() {
+    let root = temp_root().join("fetch-digest-swapped");
+    let source = root.join("source");
+    let registry = root.join("registry");
+    let store = root.join("store");
+    write_minimal_publish_source(&source);
+    let published =
+        publish(&source, Path::new("cista.toml"), Some(&registry)).expect("publish package");
+    fs::write(
+        published.join("interfaces/tool.fab"),
+        "functio swapped() → nihil { redde nihil }\n",
+    )
+    .expect("swap published bytes");
+
+    let error = fetch_to_cache("tool@1.2.3", Some(&registry), Some(&store))
+        .expect_err("swapped bytes must be refused");
+
+    assert!(error.contains("tool@1.2.3"), "{error}");
+    assert!(error.contains("does not match"), "{error}");
+    assert!(!store.join(".cache/registry/tool/1.2.3").exists());
     fs::remove_dir_all(root).expect("cleanup temp root");
 }

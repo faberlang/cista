@@ -168,7 +168,7 @@ fn content_digest_record_path(version_directory: &Path) -> PathBuf {
     PathBuf::from(record)
 }
 
-fn write_content_digest_record(version_directory: &Path) -> Result<(), String> {
+pub(super) fn write_content_digest_record(version_directory: &Path) -> Result<(), String> {
     let digest = crate::faber_lock::staged_content_sha256(version_directory)?;
     let record = content_digest_record_path(version_directory);
     std::fs::write(&record, &digest).map_err(|error| {
@@ -177,6 +177,40 @@ fn write_content_digest_record(version_directory: &Path) -> Result<(), String> {
             record.display()
         )
     })
+}
+
+/// Refuses a published registry directory unless its bytes still match the
+/// digest record written by `publish`. A registry published before the record
+/// existed has none and is refused too.
+fn verify_content_digest_record(
+    name: &str,
+    version: &str,
+    version_directory: &Path,
+) -> Result<(), String> {
+    let record = content_digest_record_path(version_directory);
+    let recorded = match std::fs::read_to_string(&record) {
+        Ok(recorded) => recorded,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(format!(
+                "registry package `{name}@{version}` has no content digest record {}; republish it under a new version",
+                record.display()
+            ));
+        }
+        Err(error) => {
+            return Err(format!(
+                "failed to read content digest record {} for `{name}@{version}`: {error}",
+                record.display()
+            ));
+        }
+    };
+    let actual = crate::faber_lock::staged_content_sha256(version_directory)?;
+    if recorded.trim() != actual {
+        return Err(format!(
+            "registry package `{name}@{version}` content digest {actual} does not match recorded {}; the published files changed after publish, republish it under a new version",
+            recorded.trim()
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn fetch_to_cache(
@@ -207,6 +241,7 @@ pub(super) fn fetch_to_cache_locked(
             registry.display()
         ));
     }
+    verify_content_digest_record(&name, &version, &source)?;
     if let Some(meta) = manifest::read_meta_manifest(&source_manifest)? {
         if meta.source.package != name || meta.source.version != version {
             return Err(format!(
