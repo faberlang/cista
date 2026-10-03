@@ -1313,6 +1313,7 @@ main {
 /// cannot pass by construction.
 fn independent_staged_digest(root: &Path) -> String {
     use sha2::Digest;
+    use std::fmt::Write as _;
 
     fn walk(directory: &Path, prefix: &str, files: &mut Vec<(String, PathBuf)>) {
         for entry in fs::read_dir(directory).expect("read staged directory") {
@@ -1345,7 +1346,7 @@ fn independent_staged_digest(root: &Path) -> String {
     }
     let mut hex = String::with_capacity(64);
     for byte in hasher.finalize() {
-        hex.push_str(&format!("{byte:02x}"));
+        let _ = write!(hex, "{byte:02x}");
     }
     hex
 }
