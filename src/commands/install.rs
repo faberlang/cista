@@ -492,9 +492,11 @@ fn recorded_content_sha256(
 
 /// Strict content gate: a project-locked package installs only when its
 /// recorded `content_sha256` is present and still matches the store content
-/// being re-snapshotted. Absent and mismatched both fail closed; a package
-/// not locked in the project has no record to verify and proceeds to record
-/// one.
+/// being re-snapshotted. A missing digest on an existing lock row fails closed.
+/// `None` means there is no matching lock row (or no project lock context), so
+/// there is no prior consumer-side digest to compare; the install records the
+/// staged content digest in the lock it writes. This preserves the separate
+/// first-install path without treating a registry response as digest-bearing.
 ///
 /// # Errors
 /// Returns an error when the recorded digest is missing or does not match

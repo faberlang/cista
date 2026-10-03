@@ -1352,7 +1352,7 @@ fn independent_staged_digest(root: &Path) -> String {
 }
 
 #[test]
-fn install_records_staged_content_sha256_in_lock() {
+fn first_install_without_lock_row_records_staged_content_sha256() {
     let root = temp_root("install-content-digest");
     let package = root.join("norma");
     let store = root.join("store");
@@ -1394,6 +1394,10 @@ entry = "main.fab"
 "#,
     )
     .expect("write project manifest");
+    assert!(
+        !project.join(faber_lock::LOCK_FILE).exists(),
+        "the first install has no consumer-side digest to compare"
+    );
 
     run(&InstallArgs {
         path: Some(package.clone()),
