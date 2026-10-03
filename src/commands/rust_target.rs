@@ -11,6 +11,15 @@ pub(super) fn verify_target_build(
     target_source: Option<&Path>,
     diagnostics: &mut Vec<String>,
 ) {
+    verify_target_build_in(manifest, target_source, None, diagnostics);
+}
+
+pub(super) fn verify_target_build_in(
+    manifest: &CistaManifest,
+    target_source: Option<&Path>,
+    target_dir: Option<&Path>,
+    diagnostics: &mut Vec<String>,
+) {
     if manifest.target.language != RUST_LANGUAGE {
         diagnostics.push(format!(
             "--verify-target-build is only implemented for target.language = `{RUST_LANGUAGE}`; got `{}`",
@@ -43,7 +52,12 @@ pub(super) fn verify_target_build(
         }
     };
 
-    if let Err(err) = run_cargo(&cargo_toml, &["check"], "cargo check") {
+    let result = if target_dir.is_some() {
+        run_cargo_with_target_dir(&cargo_toml, &["check"], "cargo check", target_dir)
+    } else {
+        run_cargo(&cargo_toml, &["check"], "cargo check")
+    };
+    if let Err(err) = result {
         diagnostics.push(err);
     }
 }
@@ -51,6 +65,7 @@ pub(super) fn verify_target_build(
 pub(super) fn build_rust_artifact(
     target_source: &Path,
     manifest: &CistaManifest,
+    package_target_dir: &Path,
 ) -> Result<PathBuf, String> {
     let cargo_toml = contained_cargo_manifest(target_source)?.ok_or_else(|| {
         format!(
@@ -70,16 +85,14 @@ pub(super) fn build_rust_artifact(
         ),
         PackageRole::Bin => (vec!["build", "--bin", crate_name], crate_name.to_owned()),
     };
-    // Force a package-local target dir. Nested cargo inherits the parent
-    // process CARGO_TARGET_DIR / workspace config (shared cache under
-    // ~/.cache/faberlang-target), which would place artifacts outside
-    // target_source/target/debug where cista expects them.
-    let package_target_dir = target_source.join("target");
+    // Keep output in the caller's package-local target directory, even when
+    // compiling an authenticated, disposable source copy. Do not inherit the
+    // parent process's target directory or workspace cache configuration.
     run_cargo_with_target_dir(
         &cargo_toml,
         &cargo_args,
         "cargo build",
-        Some(package_target_dir.as_path()),
+        Some(package_target_dir),
     )?;
 
     let artifact = package_target_dir.join("debug").join(artifact_name);
