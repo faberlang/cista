@@ -1635,3 +1635,36 @@ fn install_builds_locked_package_when_content_sha256_matches() {
 
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
+
+#[test]
+fn install_refuses_legacy_locked_package_without_source_snapshot() {
+    let root = temp_root("gate-source-snapshot-absent");
+    let package = root.join("gatedpkg");
+    let store = root.join("store");
+    let project = root.join("app");
+    write_compiled_package(&package);
+    write_locked_project(&project);
+    run(&gate_install_args(&package, &store, &project)).expect("first install");
+    let installed = store.join("gatedpkg/0.1.0");
+    fs::remove_dir_all(installed.join(SOURCE_SNAPSHOT)).expect("simulate legacy installed tree");
+    let lock_path = project.join(faber_lock::LOCK_FILE);
+    let mut lock = read_lock(&lock_path).expect("read lock");
+    lock.packages[0].content_sha256 =
+        faber_lock::staged_content_sha256(&installed).expect("record legacy installed content");
+    faber_lock::write_lock(&lock_path, &lock).expect("write legacy lock");
+    fs::remove_dir_all(package.join("rust/target")).expect("clear build directory");
+    let mut args = gate_install_args(&package, &store, &project);
+    args.verify_target_build = true;
+    let errors = run(&args)
+        .expect_err("legacy source trust is unknown")
+        .join("\n");
+    assert!(
+        errors.contains("no authenticated source snapshot"),
+        "{errors}"
+    );
+    assert!(
+        !package.join("rust/target").exists(),
+        "legacy lock must not reach Cargo"
+    );
+    fs::remove_dir_all(root).expect("cleanup legacy regression");
+}

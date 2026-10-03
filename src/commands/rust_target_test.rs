@@ -198,7 +198,7 @@ fn build_rust_artifact_rejects_missing_cargo_toml() {
     fs::create_dir_all(&target_source).expect("create target dir");
 
     let manifest = compile_manifest(Some("target"));
-    let error = build_rust_artifact(&target_source, &manifest)
+    let error = build_rust_artifact(&target_source, &manifest, &target_source.join("target"))
         .expect_err("missing Cargo.toml must be rejected");
     assert!(error.contains("missing Cargo.toml"));
     fs::remove_dir_all(root).expect("cleanup");

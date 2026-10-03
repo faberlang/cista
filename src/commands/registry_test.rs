@@ -844,3 +844,135 @@ fn fetch_refuses_package_changed_after_publish_before_cache_copy() {
     assert!(!store.join(".cache/registry/tool/1.2.3").exists());
     fs::remove_dir_all(root).expect("cleanup temp root");
 }
+
+fn write_incoming_archive_fixture(source: &Path, project: &Path) {
+    fs::create_dir_all(source.join("interfaces")).expect("create interfaces");
+    fs::create_dir_all(source.join("rust/src")).expect("create Rust source");
+    fs::create_dir_all(project).expect("create project");
+    fs::write(
+        source.join("cista.toml"),
+        r#"[source]
+package = "gatedpkg"
+version = "0.1.0"
+faber_min = "0.38.0"
+kind = "source"
+interfaces = "interfaces"
+
+[target]
+language = "rust"
+mode = "compile"
+binding_policy = "generated"
+crate = "gatedpkg"
+source = "rust"
+
+[target.compile]
+emit = "library"
+crate_type = "rlib"
+edition = "2021"
+"#,
+    )
+    .expect("write cista manifest");
+    fs::write(
+        source.join("interfaces/gatedpkg.fab"),
+        "functio lege() → nihil { redde nihil }\n",
+    )
+    .expect("write interface");
+    fs::write(
+        source.join("rust/Cargo.toml"),
+        "[package]\nname = \"gatedpkg\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo manifest");
+    fs::write(source.join("rust/src/lib.rs"), "pub fn gated() {}\n").expect("write Rust library");
+    fs::write(
+        project.join("faber.toml"),
+        r#"[package]
+name = "app"
+version = "0.1.0"
+edition = "2026"
+
+[paths]
+source = "src"
+entry = "main.fab"
+
+[dependencies]
+gatedpkg = "0.1.0"
+"#,
+    )
+    .expect("write project manifest");
+}
+
+#[test]
+fn changed_incoming_archive_is_rejected_before_cargo() {
+    for verify_target_build in [false, true] {
+        let root = temp_root().join(format!("incoming-archive-{verify_target_build}"));
+        let source = root.join("source");
+        let cache = root.join("cache/gatedpkg/0.1.0");
+        let store = root.join("store");
+        let project = root.join("app");
+        write_incoming_archive_fixture(&source, &project);
+        let original = archive_directory(&source).expect("archive original package");
+        fs::create_dir_all(&cache).expect("create cache");
+        unpack_archive(&original, &cache).expect("stage original archive");
+        let mut args = crate::cli::InstallArgs {
+            path: Some(cache.clone()),
+            package: None,
+            manifest: PathBuf::from("cista.toml"),
+            target_language: "rust".to_owned(),
+            store: Some(store.clone()),
+            registry: None,
+            project: Some(project.clone()),
+            verify_target_build: false,
+        };
+        super::super::install::run(&args).expect("first install establishes trust");
+        fs::remove_dir_all(&cache).expect("clear original cache");
+        fs::create_dir_all(&cache).expect("create pristine cache");
+        unpack_archive(&original, &cache).expect("restage pristine archive");
+        args.verify_target_build = verify_target_build;
+        super::super::install::run(&args).expect("unchanged incoming archive remains trusted");
+        let lock_before = fs::read(project.join("faber.lock")).expect("read original lock");
+        let installed = store.join("gatedpkg/0.1.0");
+        let installed_digest = crate::faber_lock::staged_content_sha256(&installed)
+            .expect("digest original installed tree");
+        let marker = root.join("build-script-ran");
+        fs::write(
+            source.join("rust/build.rs"),
+            format!("fn main() {{ std::fs::write({marker:?}, b\"executed\").unwrap(); }}\n"),
+        )
+        .expect("write changed incoming build script");
+        let replacement = archive_directory(&source).expect("archive changed same-version package");
+        fs::remove_dir_all(&cache).expect("clear original cache");
+        fs::create_dir_all(&cache).expect("create replacement cache");
+        unpack_archive(&replacement, &cache).expect("stage same-name/version replacement");
+        assert!(!cache.join("rust/target").exists());
+        args.verify_target_build = verify_target_build;
+        let result = super::super::install::run(&args);
+        assert!(
+            !marker.exists(),
+            "changed incoming build script executed before rejection (verify_target_build={verify_target_build})"
+        );
+        assert!(
+            !cache.join("rust/target").exists(),
+            "changed incoming archive must not reach ANY Cargo command"
+        );
+        assert!(
+            !cache.join("rust/Cargo.lock").exists(),
+            "Cargo must not mutate the incoming source"
+        );
+        let errors = result
+            .expect_err("changed incoming source must be rejected")
+            .join("\n");
+        assert!(
+            errors.contains("mismatch"),
+            "expected source mismatch, got: {errors}"
+        );
+        assert_eq!(
+            fs::read(project.join("faber.lock")).expect("read unchanged lock"),
+            lock_before
+        );
+        assert_eq!(
+            crate::faber_lock::staged_content_sha256(&installed).expect("digest installed tree"),
+            installed_digest
+        );
+        fs::remove_dir_all(root).expect("cleanup archive regression");
+    }
+}

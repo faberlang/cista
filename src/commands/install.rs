@@ -11,6 +11,8 @@ use super::{CommandResult, Path, PathBuf, env, fs, fs_util, registry, rust_targe
 /// Packages that are platform defaults: lock rewrite does not require a
 /// matching `faber.toml` `[dependencies]` entry.
 const PLATFORM_DEFAULT_PACKAGES: &[&str] = &["norma"];
+// Covered by the installed content digest: the source Cargo is allowed to build.
+const SOURCE_SNAPSHOT: &str = ".cista-source";
 
 /// Install a package into the shared store from a local path or registry.
 ///
@@ -81,14 +83,20 @@ fn install_package_from_path(
         package_path,
         &args.manifest,
         Some(&args.target_language),
-        args.verify_target_build,
+        false, // Native verification is deferred until the incoming-source gate.
     )?;
     let package_store_root = shared::package_store_root(store_root, &checked.manifest);
     verify_install_store_disjoint(&checked.package_root, store_root, &package_store_root)
         .map_err(|err| vec![err])?;
     let install_locks = shared::acquire_store_mutation_locks(store_root, project_root.as_deref())
         .map_err(|error| vec![error])?;
-    install_checked_package_with_locks(&checked, store_root, project_root, install_locks)
+    install_checked_package_with_locks(
+        &checked,
+        store_root,
+        project_root,
+        install_locks,
+        args.verify_target_build,
+    )
 }
 
 fn install_package_path(
@@ -102,12 +110,18 @@ fn install_package_path(
         package_path,
         &args.manifest,
         Some(&args.target_language),
-        args.verify_target_build,
+        false, // Native verification is deferred until the incoming-source gate.
     )?;
     let package_store_root = shared::package_store_root(store_root, &checked.manifest);
     verify_install_store_disjoint(&checked.package_root, store_root, &package_store_root)
         .map_err(|err| vec![err])?;
-    install_checked_package_with_locks(&checked, store_root, project_root, install_locks)
+    install_checked_package_with_locks(
+        &checked,
+        store_root,
+        project_root,
+        install_locks,
+        args.verify_target_build,
+    )
 }
 
 fn install_checked_package_with_locks(
@@ -115,10 +129,15 @@ fn install_checked_package_with_locks(
     store_root: &Path,
     project_root: Option<PathBuf>,
     install_locks: shared::StoreMutationLocks,
+    verify_target_build: bool,
 ) -> CommandResult {
     let recorded = recorded_content_sha256(&checked.manifest, project_root.as_deref())?;
-    let mut installed =
-        install_checked_package_transaction(checked, store_root, recorded.as_deref())?;
+    let mut installed = install_checked_package_transaction(
+        checked,
+        store_root,
+        recorded.as_deref(),
+        verify_target_build,
+    )?;
 
     if let Some(project_root) = project_root
         && let Err(error) = rewrite_project_lock(&project_root, checked, &installed.paths)
@@ -189,7 +208,7 @@ fn install_meta_package(
             &dependency_root,
             &args.manifest,
             Some(&args.target_language),
-            args.verify_target_build,
+            false, // Defer Cargo until source trust is established.
         )?;
         if checked.manifest.source.package != dependency.package
             || checked.manifest.source.version != dependency.version
@@ -207,7 +226,12 @@ fn install_meta_package(
     for checked in &checked_dependencies {
         // Meta install never consults a project lock (it refuses --project),
         // so no digest is recorded to gate on.
-        match install_checked_package_transaction(checked, store_root, None) {
+        match install_checked_package_transaction(
+            checked,
+            store_root,
+            None,
+            args.verify_target_build,
+        ) {
             Ok(installed) => installed_dependencies.push(installed),
             Err(errors) => return Err(rollback_installs(&mut installed_dependencies, errors)),
         }
@@ -307,6 +331,7 @@ fn install_checked_package_transaction(
     checked: &shared::CheckedPackage,
     store_root: &Path,
     recorded_content_sha256: Option<&str>,
+    verify_target_build: bool,
 ) -> Result<InstalledPackage, Vec<String>> {
     let package_store_root = shared::package_store_root(store_root, &checked.manifest);
     verify_install_store_disjoint(&checked.package_root, store_root, &package_store_root)
@@ -317,6 +342,7 @@ fn install_checked_package_transaction(
         &package_store_root,
         &staging,
         recorded_content_sha256,
+        verify_target_build,
     );
     let installed = match result {
         Ok(installed) => installed,
@@ -402,6 +428,7 @@ fn prepare_package_snapshot(
     package_store_root: &Path,
     staging: &Path,
     recorded_content_sha256: Option<&str>,
+    verify_target_build: bool,
 ) -> Result<InstalledPaths, Vec<String>> {
     // Strict content gate (G1-U4): a locked package installs only against its
     // recorded `content_sha256`; refusal happens before anything is built, so
@@ -410,23 +437,46 @@ fn prepare_package_snapshot(
     let manifest = &checked.manifest;
     ensure_rust_source_install(manifest)?;
 
+    let source_snapshot = staging.join(SOURCE_SNAPSHOT);
+    let target_output = checked
+        .paths
+        .target_source
+        .as_ref()
+        .map(|path| path.join("target"));
+    fs_util::copy_dir_clean_filtered(&checked.package_root, &source_snapshot, |relative| {
+        !relative.starts_with(".git")
+            && !target_output
+                .as_ref()
+                .is_some_and(|output| checked.package_root.join(relative).starts_with(output))
+    })
+    .map_err(|err| vec![err])?;
+    verify_incoming_source(
+        manifest,
+        package_store_root,
+        &source_snapshot,
+        recorded_content_sha256,
+    )?;
+
     let interfaces_only = is_interfaces_only_package(manifest);
+    if interfaces_only && verify_target_build {
+        let mut errors = Vec::new();
+        rust_target::verify_target_build(manifest, None, &mut errors);
+        return Err(errors);
+    }
     let target_triple = rust_target::rust_host_triple().map_err(|err| vec![err])?;
     let rustc_version = rust_target::rustc_version().map_err(|err| vec![err])?;
+    // Cargo may create Cargo.lock or otherwise mutate its working tree. Build
+    // a disposable copy, never the authenticated source snapshot or the input.
+    let build_root = staging.join(".cista-build");
     let artifact = if interfaces_only {
         None
     } else {
-        Some(
-            rust_target::build_rust_artifact(
-                checked
-                    .paths
-                    .target_source
-                    .as_deref()
-                    .ok_or_else(|| vec!["rust target requires target.source".to_owned()])?,
-                manifest,
-            )
-            .map_err(|err| vec![err])?,
-        )
+        Some(build_incoming_source(
+            checked,
+            &source_snapshot,
+            &build_root,
+            verify_target_build,
+        )?)
     };
 
     let interface_source = checked
@@ -434,7 +484,11 @@ fn prepare_package_snapshot(
         .interfaces
         .as_deref()
         .ok_or_else(|| vec!["source.interfaces path was not resolved".to_owned()])?;
-    install_interfaces(interface_source, staging).map_err(|err| vec![err])?;
+    let interface_relative = interface_source
+        .strip_prefix(&checked.package_root)
+        .map_err(|err| vec![err.to_string()])?;
+    let interface_source = source_snapshot.join(interface_relative);
+    install_interfaces(&interface_source, staging).map_err(|err| vec![err])?;
 
     let artifact_name = if interfaces_only {
         install_interfaces_only_target(manifest, staging, &target_triple)
@@ -446,6 +500,7 @@ fn prepare_package_snapshot(
         install_built_rust_target(manifest, artifact, staging, &target_triple, &rustc_version)
             .map_err(|err| vec![err])?
     };
+    fs_util::discard_staged_directory(&build_root).map_err(|err| vec![err])?;
     let content_sha256 = faber_lock::staged_content_sha256(staging).map_err(|err| vec![err])?;
 
     Ok(InstalledPaths {
@@ -456,6 +511,82 @@ fn prepare_package_snapshot(
         interfaces_only,
         content_sha256,
     })
+}
+
+fn build_incoming_source(
+    checked: &shared::CheckedPackage,
+    source_snapshot: &Path,
+    build_root: &Path,
+    verify_target_build: bool,
+) -> Result<PathBuf, Vec<String>> {
+    fs_util::copy_dir_clean(source_snapshot, build_root).map_err(|err| vec![err])?;
+    let source = checked
+        .paths
+        .target_source
+        .as_deref()
+        .ok_or_else(|| vec!["rust target requires target.source".to_owned()])?;
+    let relative = source
+        .strip_prefix(&checked.package_root)
+        .map_err(|err| vec![err.to_string()])?;
+    let build_source = build_root
+        .join(relative)
+        .canonicalize()
+        .map_err(|err| vec![err.to_string()])?;
+    let output = source.join("target");
+    if verify_target_build {
+        let mut errors = Vec::new();
+        rust_target::verify_target_build_in(
+            &checked.manifest,
+            Some(&build_source),
+            Some(&output),
+            &mut errors,
+        );
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+    }
+    rust_target::build_rust_artifact(&build_source, &checked.manifest, &output)
+        .map_err(|err| vec![err])
+}
+
+/// The old installed tree is first authenticated by the project lock. Its
+/// source snapshot then authenticates the incoming tree, before any Cargo
+/// command (including optional verification). Legacy locked installs without
+/// a source snapshot fail closed; they cannot prove trust in incoming source.
+fn verify_incoming_source(
+    manifest: &CistaManifest,
+    package_store_root: &Path,
+    incoming: &Path,
+    recorded: Option<&str>,
+) -> CommandResult {
+    let identity = format!("{}@{}", manifest.source.package, manifest.source.version);
+    let Some(_) = recorded else {
+        // No prior lock row is NOT an authenticated registry response. Preserve
+        // the first-install path as an explicit, visible trust-on-first-use policy.
+        eprintln!(
+            "trust-on-first-use: `{identity}` has no matching project lock row; \
+            incoming source is unauthenticated and its build scripts/proc macros may \
+            execute as your user. This install trusts that source; --project records \
+            it for subsequent installs."
+        );
+        return Ok(());
+    };
+    let trusted = package_store_root.join(SOURCE_SNAPSHOT);
+    if !trusted.is_dir() {
+        return Err(vec![format!(
+            "locked package `{identity}` has no authenticated source snapshot; \
+            nothing may be built. Establish source trust explicitly in a new install/lock context"
+        )]);
+    }
+    let expected = faber_lock::staged_content_sha256(&trusted).map_err(|err| vec![err])?;
+    let actual = faber_lock::staged_content_sha256(incoming).map_err(|err| vec![err])?;
+    if actual != expected {
+        return Err(vec![format!(
+            "locked package `{identity}` incoming source digest mismatch: \
+            expected `{expected}`, got `{actual}`; nothing may be built"
+        )]);
+    }
+    Ok(())
 }
 
 fn cleanup_staged_install(staging: &Path, mut errors: Vec<String>) -> Vec<String> {
@@ -495,7 +626,8 @@ fn recorded_content_sha256(
 /// being re-snapshotted. A missing digest on an existing lock row fails closed.
 /// `None` means there is no matching lock row (or no project lock context), so
 /// there is no prior consumer-side digest to compare; the install records the
-/// staged content digest in the lock it writes. This preserves the separate
+/// staged content digest (including the incoming source snapshot) in the lock
+/// it writes, with an explicit trust-on-first-use warning. This preserves the separate
 /// first-install path without treating a registry response as digest-bearing.
 ///
 /// # Errors
