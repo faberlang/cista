@@ -22,10 +22,23 @@ fn faberlang_workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .find(|root| {
-            root.join("faber/Cargo.toml").is_file() && root.join("norma/cista.toml").is_file()
+            root.join("norma/cista.toml").is_file()
+                && root.join("radix/crates/faber/Cargo.toml").is_file()
         })
-        .expect("faberlang workspace containing faber and norma")
+        .expect("faberlang workspace containing norma and the radix faber CLI")
         .to_path_buf()
+}
+
+// The faber CLI moved from faber/Cargo.toml to the radix workspace
+// (radix/crates/faber) when faber became the public target-API home
+// (00d4681, 2026-08-12). Prefer the nearest radix checkout so packet lanes
+// build into their own target, not the shared main checkout's.
+fn faber_cli_manifest(workspace: &Path) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .map(|root| root.join("radix/crates/faber/Cargo.toml"))
+        .find(|manifest| manifest.is_file())
+        .unwrap_or_else(|| workspace.join("radix/crates/faber/Cargo.toml"))
 }
 
 #[test]
@@ -1209,13 +1222,12 @@ fn install_real_norma_platform_default_builds_nested_import_without_dependency()
     let fake_library_home = root.join("fake-library-home");
     let workspace = faberlang_workspace();
     let norma = workspace.join("norma");
-    let faber_manifest = workspace.join("faber/Cargo.toml");
+    let faber_manifest = faber_cli_manifest(&workspace);
 
     fs::create_dir_all(project.join("src")).expect("create project src");
-    fs::create_dir_all(fake_library_home.join("norma/src/solum"))
-        .expect("create fake library home");
+    fs::create_dir_all(fake_library_home.join("norma/src/fs")).expect("create fake library home");
     fs::write(
-        fake_library_home.join("norma/src/solum/path.fab"),
+        fake_library_home.join("norma/src/fs/path.fab"),
         "functio nomen(textus via) → textus { redde \"wrong\" }\n",
     )
     .expect("write fake fallback interface");
@@ -1234,10 +1246,10 @@ entry = "main.fab"
     .expect("write project manifest");
     fs::write(
         project.join("src/main.fab"),
-        r#"importa ex "norma:solum/path" privata path
+        r#"import from "norma:fs/path" path
 
-incipit {
-    nota path.nomen("/tmp/file.txt")
+main {
+    print path.file_name("/tmp/file.txt")
 }
 "#,
     )
@@ -1264,7 +1276,7 @@ incipit {
     assert_eq!(norma_lock.version, "0.1.0");
     assert!(
         PathBuf::from(&norma_lock.interface_root)
-            .join("solum/path.fab")
+            .join("fs/path.fab")
             .is_file(),
         "real norma nested interface should be installed"
     );
@@ -1301,6 +1313,7 @@ incipit {
 /// cannot pass by construction.
 fn independent_staged_digest(root: &Path) -> String {
     use sha2::Digest;
+    use std::fmt::Write as _;
 
     fn walk(directory: &Path, prefix: &str, files: &mut Vec<(String, PathBuf)>) {
         for entry in fs::read_dir(directory).expect("read staged directory") {
@@ -1333,7 +1346,7 @@ fn independent_staged_digest(root: &Path) -> String {
     }
     let mut hex = String::with_capacity(64);
     for byte in hasher.finalize() {
-        hex.push_str(&format!("{byte:02x}"));
+        let _ = write!(hex, "{byte:02x}");
     }
     hex
 }
