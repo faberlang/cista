@@ -247,7 +247,7 @@ fn read_lock_returns_default_for_missing_file() {
     let path = directory.path().join(LOCK_FILE);
 
     let lock = read_lock(&path).expect("missing lock file should return default");
-    assert!(lock.packages.is_empty());
+    assert_eq!(lock.packages, [] as [LockedPackage; 0]);
 }
 
 #[test]

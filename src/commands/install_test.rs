@@ -166,7 +166,10 @@ entry = "main.fab"
     assert!(installed_manifest.target.artifact.is_none());
     assert!(installed_manifest.target.triple.is_none());
     assert!(installed_manifest.target.rustc.is_none());
-    assert!(installed_manifest.bindings.is_empty());
+    assert_eq!(
+        installed_manifest.bindings,
+        [] as [crate::manifest::Binding; 0]
+    );
     assert_eq!(
         installed_manifest.target.binding_policy,
         BindingPolicy::Generated

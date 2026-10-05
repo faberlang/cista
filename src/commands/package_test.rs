@@ -95,7 +95,7 @@ fn package_interfaces_exclude_non_interface_files() {
     ];
 
     assert_eq!(interface_files(files), [Path::new("interfaces/solum.fab")]);
-    assert!(interface_files(Vec::new()).is_empty());
+    assert_eq!(interface_files(Vec::new()), [] as [std::path::PathBuf; 0]);
 }
 
 #[test]
@@ -110,5 +110,5 @@ fn runtime_bindings_are_formatted_for_inspection() {
         runtime_binding_lines(&bindings),
         ["solum#via -> norma::solum::via"]
     );
-    assert!(runtime_binding_lines(&[]).is_empty());
+    assert_eq!(runtime_binding_lines(&[]), [] as [std::string::String; 0]);
 }
